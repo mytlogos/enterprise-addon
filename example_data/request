@@ -1,0 +1,16 @@
+{
+  "login": {
+    "mail": "hi@hi.de",
+    "pw": "1234"
+  },
+  "register": {
+    "mail": "hi@hi.de",
+    "pw": "1234"
+  },
+  "logout": {
+    "all": false
+  },
+  "data": {},
+  "uid": "sth long",
+  "last-updated": "timestamp"
+}

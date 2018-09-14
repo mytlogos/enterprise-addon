@@ -1,0 +1,28 @@
+{
+  "releases": [
+    {
+      "id": "",
+      "medium-id": "sth long",
+      "time": "",
+      "url": "",
+      "length": "",
+      "index": 0,
+      "progress": 1
+    }
+  ],
+  "media": [
+    {
+      "id": "sth long",
+      "primary-name": "Aloha",
+      "secondary-names": [
+        "Guten Tag",
+        "Auf Wiedersehen"
+      ],
+      "series": null,
+      "medium": "text",
+      "type": "anime",
+      "author": "",
+      "total": "10v12v0"
+    }
+  ]
+}

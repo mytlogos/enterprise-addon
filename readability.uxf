@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<diagram program="umlet" version="14.2">
+  <zoom_level>10</zoom_level>
+  <element>
+    <type>com.baselet.element.old.allinone.ActivityDiagramText</type>
+    <coordinates>
+      <x>40</x>
+      <y>0</y>
+      <w>893</w>
+      <h>4877</h>
+    </coordinates>
+    <panel_attributes>title:start
+Start
+While[content left]
+	grade paragraph
+	get three ancestors
+	initialize them
+	set ancestors as candidates
+	add grade per ancestor distance
+While[candidates left]
+	beat down score by reverse link density
+	While[top candidates left]
+		If
+			[candidate score is bigger than top]
+			insert candidate
+			If
+				[top candidates bigger than allowed]
+				remove last
+			EndIf
+		EndIf
+get top candidate
+get the ancestors of candidates which have similar scores to top candidate
+check if top candidate is of another lineage as the other ancestors
+If
+	[alternative ancestor &gt;= min_top]
+	While[topParent not body]
+		count the frequency in the lineage of alternative tops
+		If
+			[frequency &gt;= min_candidates]
+			parent of top is new top
+		EndIf	
+EndIf
+check if parent is better top
+set siblingThreshold
+While[siblings left]
+	give bonus for same className as top
+	If
+		[sibling is readable and above threshold]
+		append true
+	
+		[siblings is paragraph]
+		If
+			[paragraph is content]
+			append true
+		EndIf
+	EndIf		
+	If 
+		[append to content]
+		append to content
+	EndIf
+prepArticle
+remove styles from content
+mark tables as content if it is not representational
+clean fishy forms
+clean fishy fieldsets
+remove object if it does not contain videos
+remove embed if it does not contain videos
+remove h1 if it does not contain videos
+remove footer if it does not contain videos
+remove link if it does not contain videos
+remove aside if it does not contain videos
+removes all nodes which have share in attribute in lineage of top candidates (but not themselves)
+check h2 if only one if it is the header and remove it if it is similar to header
+remove iframe if it does not contain videos
+remove input if it does not contain videos
+remove textarea if it does not contain videos
+remove select if it does not contain videos
+remove button if it does not contain videos
+clean fishy tables
+clean fishy uls
+clean fishy divs
+remove paragraphs without content
+filter br´s
+remove single cell tables
+If 
+	[content not enough chars]
+	If
+		[flags left]
+		save attempt
+		run again with other flags
+
+		[no flaggs]
+		sort attempt after textLength
+		If
+			[longest attempt has text]
+			return attempt
+
+			[no content]
+			return nothing/null
+		EndIf
+	EndIf
+EndIf
+If 
+	[no article]
+	return null
+EndIf
+post processing
+clean relative uris
+clean non preserved classes
+return article
+End
+</panel_attributes>
+    <additional_attributes/>
+  </element>
+</diagram>

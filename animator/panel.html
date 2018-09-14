@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <style>
+        html, body {
+            margin: 0;
+        }
+
+        .btn-container {
+            display: flex;
+            position: fixed;
+            padding: 10px;
+            width: 100%;
+            z-index: 20;
+        }
+
+        .btn {
+            padding: 7px 14px;
+            border-width: 0;
+            color: #b9b9b9;
+        }
+
+        .btn:hover {
+            cursor: pointer;
+            filter: brightness(150%);
+        }
+
+        .btn:active {
+            filter: brightness(50%);
+        }
+
+        #diagram {
+            width: 100%;
+            height: 100vh;
+        }
+
+        .btn.play {
+            background: url("img/play.png") no-repeat;
+            background-size: 40px 40px;
+            width: 44px;
+            height: 44px;
+        }
+
+        .btn.pause {
+            background: url("img/pause.png") no-repeat;
+            background-size: 40px 40px;
+            width: 44px;
+            height: 44px;
+        }
+
+        .btn.stop {
+            background: url("img/stop.png") no-repeat;
+            background-size: 40px 40px;
+            width: 44px;
+            height: 44px;
+        }
+
+        .btn.backward {
+            background: url("img/backward.png") no-repeat;
+            background-size: 40px 40px;
+            width: 44px;
+            height: 44px;
+        }
+
+        .btn.forward {
+            background: url("img/forward.png") no-repeat;
+            background-size: 40px 40px;
+            width: 44px;
+            height: 44px;
+        }
+    </style>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<div class="btn-container">
+    <button class="btn control play"></button>
+    <button class="btn stop"></button>
+    <button class="btn backward"></button>
+    <button class="btn forward"></button>
+</div>
+<div id="diagram"></div>
+<!--<script src="https://cdnjs.cloudflare.com/ajax/libs/gojs/1.8.28/go-debug.js"></script>-->
+<script src="go-debug.js"></script>
+<script src="animator.js"></script>
+<script src="panelBack.js"></script>
+<script src="messaging.js"></script>
+</body>
+</html>

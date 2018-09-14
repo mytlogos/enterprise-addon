@@ -1,0 +1,13 @@
+{
+  "register": {
+    "uid": "sth long"
+  },
+  "login": {
+    "uid": "sth long"
+  },
+  "data": {
+    "list": [],
+    "media": []
+  },
+  "status": "some code"
+}

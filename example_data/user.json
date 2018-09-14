@@ -1,0 +1,26 @@
+{
+  "name": "eberhard",
+  "last-synced": "2018-18-16T10:10:24+0400",
+  "list": [
+    {
+      "id": "ioioioioi111",
+      "name": "reading",
+      "medium": "",
+      "type": "anime",
+      "host": "",
+      "session-cookies": ""
+    }
+  ],
+  "data": [
+    {
+      "id": "12910909",
+      "list": [
+        {
+          "id": "128190",
+          "progress": "release-id"
+        }
+      ],
+      "last-updated": "2018-18-16T10:10:24+0400"
+    }
+  ]
+}

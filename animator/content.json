@@ -1,0 +1,24 @@
+{
+  "parents": [
+    {
+      "id": 0,
+      "contentScore": 0
+    },
+    {
+      "id": 1,
+      "contentScore": 1
+    },
+    {
+      "id": 2,
+      "contentScore": 2
+    },
+    {
+      "id": 3,
+      "contentScore": 3
+    }
+  ],
+  "current": {
+    "id": 4,
+    "contentScore": 4
+  }
+}

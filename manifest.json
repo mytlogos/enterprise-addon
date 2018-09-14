@@ -1,0 +1,57 @@
+{
+  "manifest_version": 2,
+  "name": "Enterprise",
+  "version": "1.0",
+  "description": "Does nothing much at the moment.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "unlimitedStorage",
+    "notifications",
+    "tabs",
+    "*://*/*"
+  ],
+  "options_ui": {
+    "page": "ui/options.html",
+    "browser_style": true
+  },
+  "background": {
+    "scripts": [
+      "background/storage.js",
+      "background/client.js",
+      "background/login.js",
+      "background/stub.js",
+      "background/background.js"
+    ]
+  },
+  "devtools_page": "animator/animator.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "*://localhost/"
+      ],
+      "js": [
+        "content/middlemen.js"
+      ]
+    },
+    {
+      "matches": [
+        "*://*/*"
+      ],
+      "js": [
+        "content/progressCheck.js",
+        "content/displayPopup.js",
+        "content/analyzer.js"
+      ]
+    }
+  ],
+  "browser_action": {
+    "browser_style": true,
+    "default_icon": {
+      "48": "img/ext_icon_inactive_48.png",
+      "32": "img/ext_icon_inactive_32.png"
+    },
+    "default_title": "Enterprise",
+    "default_popup": "ui/popup.html"
+  }
+}
