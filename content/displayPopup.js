@@ -1,24 +1,4 @@
-const Displayer = (function () {
-    const style =
-        ".enterprise-popup {" +
-        "       position: fixed;" +
-        "       color: white;" +
-        "       background-color: gray;" +
-        "       bottom: 20px;" +
-        "       right: 20px;" +
-        "       opacity: .2;" +
-        "       z-index: 9999;" +
-        "     }" +
-        "    .enterprise-popup:hover{" +
-        "     opacity:.7" +
-        "    }" +
-        "    .enterprise-popup * {" +
-        "     padding: 5px;" +
-        "    }";
-
-    // let previousPopup = document.querySelector("body > .enterprise-popup");
-    // previousPopup.parentElement.removeChild(previousPopup);
-
+const Display = (function () {
     function addInfo(name, defaultValue = "N/A") {
         const info = document.createElement("div");
         info.innerText = name;
@@ -28,35 +8,34 @@ const Displayer = (function () {
 
         info.appendChild(infoText);
         popup.appendChild(info);
+        info.style.padding = "5px";
 
         return newText => infoText.innerText = newText;
     }
 
-    const styleElement = document.body.appendChild(document.createElement("style"));
-    styleElement.innerText = style;
-
     const popup = document.body.appendChild(document.createElement("div"));
-    popup.className = "enterprise-popup";
+
+    popup.style.position = "fixed";
+    popup.style.color = "white";
+    popup.style.backgroundColor = "gray";
+    popup.style.right = "20px";
+    popup.style.bottom = "20px";
+    popup.style.opacity = ".2";
+    popup.style.zIndex = "9999";
+
+    popup.addEventListener("mouseenter", () => popup.style.opacity = ".7");
+    popup.addEventListener("mouseleave", () => popup.style.opacity = ".2");
 
     //clean up
-    window.addEventListener("unload", () => {
-        styleElement.parentElement.removeChild(styleElement);
-        popup.parentElement.removeChild(popup);
-    });
-
-    const typeSetter = addInfo("Type:", "N/A");
-    const progressSetter = addInfo("Progress:", "0");
-    const startSetter = addInfo("Start:", "N/A");
-    const endSetter = addInfo("End:", "N/A");
-    const titleSetter = addInfo("Title:", "N/A");
-    const seriesSetter = addInfo("Series:", "N/A");
+    window.addEventListener("unload blur", () => popup.parentElement.removeChild(popup));
+    window.addEventListener("show", () => document.body.appendChild(popup));
 
     return {
-        setType: typeSetter,
-        setProgress: progressSetter,
-        setStart: startSetter,
-        setEnd: endSetter,
-        setTitle: titleSetter,
-        setSeries: seriesSetter,
+        setType: addInfo("Type:", "N/A"),
+        setProgress: addInfo("Progress:", "0"),
+        setStart: addInfo("Start:", "N/A"),
+        setEnd: addInfo("End:", "N/A"),
+        setTitle: addInfo("Title:", "N/A"),
+        setSeries: addInfo("Series:", "N/A"),
     };
 })();

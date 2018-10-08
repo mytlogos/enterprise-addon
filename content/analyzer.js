@@ -20,7 +20,14 @@ const Analyzer = {
         console.log("starting");
 
         let title = this._getArticleTitle();
-        let result = this.getMain();
+        let result;
+
+        try {
+            result = this.getMain();
+        } catch (e) {
+            console.log(e);
+            return;
+        }
 
         if (!result.title) {
             result.title = title;
@@ -30,7 +37,7 @@ const Analyzer = {
             this.setMeta(result);
         }
         this.result(result);
-
+        console.log("result", result);
         //todo ask what should be expected if this is not the first time sth of this "series"
         //todo is encountered, like a video etc.
     },
@@ -100,7 +107,12 @@ const Analyzer = {
         }
 
         let newTitle;
+        let words = result.title.split(/\W/).filter(value =>
+            value &&
+            (value !== value.toUpperCase() || !/\D/.test(value))
+        );
 
+        this.queryText(...words);
     },
 
 
@@ -160,10 +172,9 @@ const Analyzer = {
     /**
      *
      * @param {HTMLElement} element
-     * @param {TreeWalker} walker
      * @param {Set} candidates
      */
-    score(element, walker, candidates) {
+    score(element, candidates) {
         //do not score an element without ancestors
         if (!element.parentElement)
             return;
@@ -212,12 +223,11 @@ const Analyzer = {
 
     /**
      *
-     * @param {HTMLElement} element
-     * @param text
+     * @param {string} text
      * @return {number}
      * @private
      */
-    _getCharCount(element, text = this.getOwnText(element)) {
+    _getCharCount(text) {
         return text.split(this.REGEXPS.contentChars).length - 1;
     },
 
@@ -306,14 +316,20 @@ const Analyzer = {
                 }
             }
         });
+
         let candidates = new Set();
 
-        let element = walker.previousNode();
+        this.forEachNode(
+            walker,
+            //use .fire() if i want to debug with tree diagram
+            element => {
+                let content = this.score(element, candidates);
 
-        while (element = walker.nextNode()) {
-            this.score(element, walker, candidates).fire();
-        }
-
+                if (this.debug) {
+                    content.fire();
+                }
+            }
+        );
         return candidates;
     },
 
@@ -322,14 +338,15 @@ const Analyzer = {
      * @param {Set} candidates
      * @return {Object|boolean}
      */
-    getTop(candidates) {
+    getContent(candidates) {
         //remove any duplicate candidates
         let sortedCandidates = Array.from(candidates);
         //sort candidates with greatest candidates first
         sortedCandidates.sort((a, b) => a.enterprise.contentScore - b.enterprise.contentScore).reverse();
+
         //todo do more?
 
-        sortedCandidates = sortedCandidates.filter((value, index, array) => {
+        let filteredCandidates = sortedCandidates.filter((value, index, array) => {
             //filter out unsuitable candidates, we need 'content'
             let enterprise = value.enterprise;
             if (!enterprise.audioLength
@@ -356,18 +373,120 @@ const Analyzer = {
             return true;
         });
 
+        let filteredOut = new Set(candidates);
+        filteredCandidates.forEach(value => filteredOut.delete(value));
+        console.log("sorted", sortedCandidates, "filteredOut", filteredOut);
+
         const bodyContent = document.body.enterprise;
 
         if (!bodyContent) {
             return false;
         }
 
-        const videoContent = bodyContent.videoLength && this.isVideoContent(sortedCandidates);
-        const audioContent = bodyContent.audioLength && this.isAudioContent(sortedCandidates);
-        const imageContent = bodyContent.imageLength && this.isImageContent(sortedCandidates);
-        const textContent = bodyContent.totalChars && this.isTextContent(sortedCandidates);
-        console.log("video", videoContent, "audio", audioContent, "img", imageContent, "text", textContent);
-        return videoContent || audioContent || imageContent || textContent;
+        const videoContent = bodyContent.videoLength && this.isVideoContent(filteredCandidates);
+        const audioContent = bodyContent.audioLength && this.isAudioContent(filteredCandidates);
+        const imageContent = bodyContent.imageLength && this.isImageContent(filteredCandidates);
+        const textContent = bodyContent.totalChars && this.isTextContent(filteredCandidates);
+        const tocContent = bodyContent.linkLength && this.isToCContent(sortedCandidates);
+
+        console.log("video", videoContent, "audio", audioContent, "img", imageContent, "text", textContent, "toc", tocContent);
+        return textContent || videoContent || audioContent || imageContent || tocContent || {};
+    },
+
+    queryText(...args) {
+        /*if (Array.isArray(args[0])) {
+            let result = [];
+
+            for (let arg of args) {
+                result.push(this.queryText(arg));
+            }
+
+            return result;
+        }*/
+
+        if (!args.length) {
+            return new Map();
+        }
+        const regs = args.map(value => {
+                if (value instanceof RegExp) {
+                    return value;
+                }
+                if (value instanceof String || typeof value === "string") {
+                    return new RegExp(value);
+                }
+                throw Error("invalid argument");
+            }
+        );
+
+
+        const testResult = new Map(regs.map(value => [value, []]));
+
+        this.forEachNode(
+            this.createTextWalker(),
+            node => {
+                for (let reg of regs) {
+                    if (reg.test(node.data)) {
+                        testResult.get(reg).push(node);
+                    }
+                }
+            }
+        );
+
+        const result = new Map();
+
+        testResult.forEach((valueNodes, key) => {
+                for (let text of valueNodes) {
+                    let val = result.get(text);
+                    if (!val) {
+                        val = [];
+                        result.set(text, val);
+                    }
+                    val.push(key);
+                }
+            }
+        );
+        return result;
+    },
+
+    createTextWalker(root = document.body) {
+        return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+            acceptNode: node => {
+                let tag = node.parentElement.tagName.toLowerCase();
+                return tag !== "script" && tag !== "style" && tag !== "noscript" ?
+                    NodeFilter.FILTER_ACCEPT :
+                    NodeFilter.FILTER_REJECT;
+            }
+        })
+    },
+
+    /**
+     *
+     * @param {TreeWalker} walker
+     * @param {function} callback
+     * @param {boolean?} evalCurrent
+     */
+    forEachNode(walker, callback, evalCurrent = true) {
+        if (evalCurrent) {
+            if (walker.whatToShow === walker.currentNode.nodeType) {
+                callback(walker.currentNode);
+            } else {
+                let currentNode = walker.currentNode;
+                let otherNode;
+
+                if (currentNode !== (otherNode = walker.nextNode()) && otherNode) {
+                    walker.previousNode();
+                } else if (currentNode !== (otherNode = walker.previousNode()) && otherNode) {
+                    walker.nextNode();
+                } else {
+                    callback(walker.currentNode);
+                }
+            }
+        }
+
+        let node;
+        while (node = walker.nextNode()) {
+            callback(node);
+        }
     },
 
     /**
@@ -381,26 +500,24 @@ const Analyzer = {
             NodeFilter.SHOW_ELEMENT,
             {
                 acceptNode: node =>
-                    this.skipElement(node) ||
-                    this.REGEXPS.negative.test(node.className) ||
-                    this.REGEXPS.negative.test(node.id) ?
-                        NodeFilter.FILTER_REJECT :
-                        NodeFilter.FILTER_ACCEPT
+                    (this.skipElement(node)
+                        || this.REGEXPS.negative.test(node.className)
+                        || this.REGEXPS.negative.test(node.id))
+                        ? NodeFilter.FILTER_REJECT
+                        : NodeFilter.FILTER_ACCEPT
             }
         );
     },
 
-    getPositiveText(element) {
-        let walker = this.nonNegativeWalker(element);
-        //so that the root is evaluated too
-        let node = walker.previousNode();
+    getNonNegativeText(element) {
+        let text = "";
 
-        let positiveText = "";
-        while (node = walker.nextNode()) {
-            positiveText += this.getOwnText(node);
-        }
+        this.forEachNode(
+            this.nonNegativeWalker(element),
+            node => text += this.getOwnText(node)
+        );
 
-        return positiveText;
+        return text;
     },
 
     /**
@@ -440,9 +557,9 @@ const Analyzer = {
      * @param {HTMLElement} start
      * @param {HTMLElement} end
      * @param {string} type
-     * @param {boolean} seeAble
+     * @param {boolean?} seeAble
      * @param {boolean?} durationAble
-     * @return {boolean|{start: *, end: *, seeAble: *, durationAble: *}}
+     * @return {boolean|{start: HTMLElement, end: HTMLElement, seeAble: boolean, durationAble?: boolean}}
      */
     createResult(start, end, type, seeAble, durationAble) {
         return start && end && {start, end, type, seeAble, durationAble}
@@ -452,14 +569,56 @@ const Analyzer = {
     /**
      *
      * @param {Array} candidates
+     * @return {*|boolean|{start: HTMLElement, end: HTMLElement, seeAble: boolean, durationAble?: boolean}}
+     */
+    isToCContent(candidates) {
+        // noinspection JSCheckFunctionSignatures
+        candidates = candidates.filter(element => element.enterprise
+            .links.some(link => {
+                if (link.textContent.match(/\d/)) {
+                    return true;
+                }
+
+                return false;
+            }));
+
+
+        candidates.forEach(value => {
+
+        });
+        return this.createResult(null, null, "toc");
+    },
+
+
+    /**
+     *
+     * @param {Array} candidates
      */
     isTextContent(candidates) {
+        //todo what if multiple chapters/textContents are available? (e.g. infinity scroll)
         candidates = candidates.filter(element => {
-            let positiveText = this.getPositiveText(element);
-            return this._getCharCount(element, positiveText) > 50;
+            const positiveText = this.getNonNegativeText(element);
+            const positiveContent = this._getCharCount(positiveText);
+
+            element.enterprise.positiveChars = positiveContent;
+            return positiveContent > 50;
         });
         //todo implement text content
         let topCandidate = candidates[0];
+
+        while (topCandidate = candidates.shift()) {
+            let nextCandidate = candidates[0];
+
+            if (!nextCandidate || !isAncestor(nextCandidate, topCandidate)) {
+                break
+            }
+
+            let diffPosChars = topCandidate.enterprise.positiveChars - nextCandidate.enterprise.positiveChars;
+
+            if (diffPosChars < 0 || diffPosChars > 5) {
+                break
+            }
+        }
 
         if (!topCandidate) {
             return;
@@ -470,7 +629,13 @@ const Analyzer = {
         let first = contents[0];
         let last = contents[contents.length - 1];
 
-        return this.createResult(first, last, "text", true);
+        let result = this.createResult(first, last, "text", true);
+
+        if (!result) {
+            return result;
+        }
+
+        return result;
     },
 
     /**
@@ -574,14 +739,10 @@ const Analyzer = {
 
     getMain() {
         let doc = document;
-        // this.moveScriptAndStyles(doc);
-        this.normalize(doc);
+        this.normalize(doc.body);
         let candidates = this.initialize(doc);
 
-        let result = this.getTop(candidates);
-        console.log("top", result);
-        console.log("candidates", candidates);
-        return result || {};
+        return this.getContent(candidates);
     },
 
     /**
@@ -589,19 +750,15 @@ const Analyzer = {
      * Removes TextNodes with whitespace (including /r/n) only.
      * Combines adjacent TextNodes.
      *
-     * @param {Element | Document} element
+     * @param {Element} element
      */
     normalize(element) {
-        let walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-
-        let node;
         //trim every textNode
         //this empties all nodes that contain whitespace chars only
-        while (node = walker.nextNode()) {
-            //node is of type CharacterData
-            // noinspection JSUndefinedPropertyAssignment
-            node.data = node.data.trim();
-        }
+        this.forEachNode(
+            this.createTextWalker(element),
+            node => node.data = node.data.trim()
+        );
         //remove empty textNodes
         element.normalize();
     },
@@ -821,6 +978,10 @@ const Analyzer = {
                 return this.audios.length;
             },
 
+            get linkLength() {
+                return this.audios.length;
+            },
+
             set classWeight(classWeight) {
                 this._classWeight = classWeight;
                 this.contentScore += classWeight;
@@ -908,6 +1069,7 @@ const Analyzer = {
             curTitle = origTitle = document.title.trim();
 
             // If they had an element with id "title" in their HTML
+            //fixme how is this searching for an id??
             if (typeof curTitle !== "string")
                 curTitle = origTitle = document.getElementsByTagName("title")[0].textContent.trim();
         } catch (e) {/* ignore exceptions setting the title. */
@@ -931,8 +1093,7 @@ const Analyzer = {
         } else if (curTitle.indexOf(": ") !== -1) {
             // Check if we have an heading containing this exact string, so we
             // could assume it's the full title.
-            let headings = Array.from(document.getElementsByTagName("h1"));
-            headings.push(...Array.from(document.getElementsByTagName("h2")));
+            let headings = Array.from(document.querySelectorAll("h1,h2,h3,h4,h5,h6"));
 
             let trimmedTitle = curTitle.trim();
             let match = headings.some(heading => heading.textContent.trim() === trimmedTitle);
@@ -983,11 +1144,11 @@ const Analyzer = {
                 ProgressChecker.setDurationAble(result.start)
             }
         }
-        Displayer.setEnd(result.end.enterprise.selector);
-        Displayer.setStart(result.start.enterprise.selector);
-        Displayer.setTitle(result.title);
-        Displayer.setType(result.type);
-        Displayer.setSeries(result.series);
+        Display.setEnd(result.end.enterprise.selector);
+        Display.setStart(result.start.enterprise.selector);
+        Display.setTitle(result.title);
+        Display.setType(result.type);
+        Display.setSeries(result.series);
     }
 };
 
@@ -1134,7 +1295,7 @@ function arrayMin(array, predicate = (a, b) => Math.min(a, b)) {
 }
 
 //fixme remove this later
-ProgressChecker.onProgress = progress => Displayer.setProgress(`${(progress * 100).toFixed(1)}%`);
+ProgressChecker.onProgress = progress => Display.setProgress(`${(progress * 100).toFixed(1)}%`);
 
 function sendMessage(message, dev) {
     if (dev) {

@@ -199,10 +199,10 @@ attributeFilter: ["class"]
     function progress() {
         if (durationAble) {
             if (start && end) {
+                //you shall watch your videos!
                 return seenProgress() === 1 ? mediaProgress(durationAble) : 0;
             }
-            //you shall watch your videos!
-            return mediaProgress(audio);
+            return mediaProgress(durationAble);
         } else {
             return seenProgress();
         }
@@ -211,8 +211,6 @@ attributeFilter: ["class"]
     //todo set them as first child and last child of body or wait for input?
     let start = nodeGetter(true);
     let end = nodeGetter(false);
-    let video;
-    let audio;
     let durationAble;
 
     let progressCallback;
