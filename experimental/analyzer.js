@@ -4,31 +4,12 @@
  *
  */
 const Analyzer = {
-    /**
-     * @access private
-     * @memberOf Analyzer
-     */
-    running: false,
 
     analyze() {
         this.id = idGenerator();
         //analyze can only run once
-        if (this.running) {
-            return
-        }
-        this.running = true;
-
-        let main;
-        try {
-            main = this.getMain();
-        } catch (e) {
-            console.log(e);
-        }
-
-        this.running = false;
-        return main;
-        //todo is encountered, like a video etc.
-        //todo ask what should be expected if this is not the first time sth of this "series"
+        console.log("starting");
+        return this.getMain();
     },
 
     /**
@@ -240,13 +221,7 @@ const Analyzer = {
         this.forEachNode(
             walker,
             //use .fire() if i want to debug with tree diagram
-            element => {
-                let content = this.score(element, candidates);
-
-                if (this.debug) {
-                    content.fire();
-                }
-            }
+            element => this.score(element, candidates)
         );
         return candidates;
     },
@@ -306,7 +281,7 @@ const Analyzer = {
         const textContent = bodyContent.totalChars && this.isTextContent(filteredCandidates);
         const tocContent = bodyContent.linkLength && this.isToCContent(sortedCandidates);
 
-        return textContent || videoContent || audioContent || imageContent || tocContent;
+        return textContent || videoContent || audioContent || imageContent || tocContent || {};
     },
 
     queryText(...args) {
@@ -1000,70 +975,9 @@ const Selector = {
     }
 };
 
-const OtherSelector = {
-    previousElementSibling(element) {
-        if (element.previousElementSibling !== 'undefined') {
-            return element.previousElementSibling;
-        } else {
-            // Loop through ignoring anything not an element
-            while (element = element.previousSibling) {
-                if (element.nodeType === 1) {
-                    return element;
-                }
-            }
-        }
-    },
-
-    /*
-    * Generate a Selector for a given element.
-    */
-    getQuerySelector(element) {
-        // False on non-elements
-        if (!(element instanceof HTMLElement)) {
-            return false;
-        }
-        let path = [];
-        while (element.nodeType === Node.ELEMENT_NODE) {
-            let selector = element.nodeName;
-            if (element.id) {
-                selector += ('#' + element.id);
-            }
-            else {
-                // Walk backwards until there is no previous sibling
-                let sibling = element;
-                // Will hold nodeName to join for adjacent selection
-                let siblingSelectors = [];
-                while (sibling !== null && sibling.nodeType === Node.ELEMENT_NODE) {
-                    siblingSelectors.unshift(sibling.nodeName);
-                    sibling = this.previousElementSibling(sibling);
-                }
-                // :first-child does not apply to HTML
-                if (siblingSelectors[0] !== 'HTML') {
-                    siblingSelectors[0] = siblingSelectors[0] + ':first-child';
-                }
-                selector = siblingSelectors.join(' + ');
-            }
-            path.unshift(selector);
-            element = element.parentNode;
-        }
-        return path.join(' > ');
-    }
-};
 
 function arrayMax(array, predicate = (a, b) => Math.max(a, b)) {
     return array.length && array.reduce(predicate);
-}
-
-function sendMessage(message, dev) {
-    if (dev) {
-        message.url = window.location.href;
-
-        message = {
-            dev: message
-        };
-    }
-
-    return browser.runtime.sendMessage(message).catch(error => console.log(`error for analyzer, msg: `, message, error));
 }
 
 window.addEventListener("unload", () => sendMessage({analyzer: false}, true));

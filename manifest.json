@@ -41,6 +41,7 @@
       "js": [
         "content/progressCheck.js",
         "content/displayPopup.js",
+        "content/metaExtractor.js",
         "content/analyzer.js"
       ]
     }
