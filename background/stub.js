@@ -3,11 +3,10 @@ const StubClient = {};
 
 const Stub = {
     activate() {
-        UserSystem.logged_in = this.loggedIn;
-        UserSystem.logged_in_cache = true;
+        UserSystem.loggedIn = this.loggedIn;
         UserSystem.activatePush = () => {
         };
-        UserSystem.get_uid = this.getUid
+        UserSystem.getUuid = this.getUid
     },
 
     /**

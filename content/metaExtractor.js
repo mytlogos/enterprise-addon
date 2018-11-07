@@ -252,8 +252,6 @@ const MetaExtractor = (function () {
 
     function meta(candidates) {
         candidates = candidates.filter(value => value.score);
-        console.log(candidates);
-
         let scoredCandidates = [...candidates].sort((a, b) => b.score - a.score);
 
         let chapters = scoredCandidates.filter(value => value.chapter);
@@ -739,11 +737,11 @@ const MetaExtractor = (function () {
         },
 
         extractVolume(s) {
-            return {s, index: undefined};
+            return s;
         },
 
         extractEpisode(s) {
-            return {s, index: undefined};
+            return s;
         },
     };
 

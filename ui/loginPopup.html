@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Enterprise</title>
+    <style>
+        html, body {
+            margin: 0;
+        }
+
+        main {
+            width: 400px;
+            padding: 16px;
+        }
+
+        main > * {
+            margin-top: 10px;
+        }
+
+        .error {
+            color: #b90000;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        /* Full-width inputs */
+        input[type=text], input[type=password] {
+            width: 100%;
+            padding: 12px 20px;
+            margin: 8px 0;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+        }
+
+        /* Set a style for all buttons */
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 14px 20px;
+            margin: 8px 0;
+            border: none;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        /* Add a hover effect for buttons */
+        button:hover {
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+<main>
+    <form>
+        <label class="hidden" for="mail">Name:</label>
+        <input class="hidden" type="text" placeholder="Enter your E-Mail" name="mail" required>
+        <label for="userName">Name:</label>
+        <input type="text" placeholder="Enter your nickname" name="userName" required>
+        <label for="psw">Password:</label>
+        <input type="password" placeholder="Enter Password" name="psw" required>
+        <label class="hidden" for="psw-repeat">Repeat Password:</label>
+        <input class="hidden" type="password" placeholder="Enter Password again" name="psw-repeat" required>
+    </form>
+    <div class="error hidden"></div>
+    <div class="forgot">
+        <a href="#">Forgot Password?</a>
+    </div>
+    <div class="register">
+        Don't have an account?
+        <a href="#">Sign up!</a>
+    </div>
+    <div class="login hidden">
+        Already have an account?
+        <a href="#">Sign in!</a>
+    </div>
+    <button class="finish">Send</button>
+</main>
+<script src="loginPopup.js"></script>
+</body>
+</html>

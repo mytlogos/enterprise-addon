@@ -17,6 +17,7 @@
   },
   "background": {
     "scripts": [
+      "background/observable.js",
       "background/storage.js",
       "background/client.js",
       "background/login.js",
@@ -26,14 +27,6 @@
   },
   "devtools_page": "animator/animator.html",
   "content_scripts": [
-    {
-      "matches": [
-        "*://localhost/"
-      ],
-      "js": [
-        "content/middlemen.js"
-      ]
-    },
     {
       "matches": [
         "*://*/*"
@@ -52,7 +45,6 @@
       "48": "img/ext_icon_inactive_48.png",
       "32": "img/ext_icon_inactive_32.png"
     },
-    "default_title": "Enterprise",
-    "default_popup": "ui/popup.html"
+    "default_title": "Enterprise"
   }
 }

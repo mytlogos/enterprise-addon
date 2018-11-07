@@ -1,4 +1,56 @@
 const unknown = "unknown";
+
+const user = Observable({
+    name: "",
+    session: "",
+    uuid: "",
+
+    /**
+     *
+     * @param {string} name
+     * @return {this}
+     */
+    setName(name) {
+        validateString(name);
+        this.name = name;
+        return this;
+    },
+
+    /**
+     *
+     * @param {string} uuid
+     * @return {this}
+     */
+    setId(uuid) {
+        validateString(uuid);
+        this.uuid = uuid;
+        return this;
+    },
+
+    /**
+     *
+     * @param {string} session
+     * @return {this}
+     */
+    setSession(session) {
+        validateString(session);
+        this.session = session;
+        return this;
+    },
+
+    /**
+     *
+     * @return {this}
+     */
+    clear() {
+        this.session = "";
+        this.uuid = "";
+        this.name = "";
+        return this;
+    }
+});
+
+
 //todo make a export feature?
 //todo get more into logging
 const states = {
@@ -52,7 +104,7 @@ class PageWrapper {
      *
      * @return {void}
      */
-    start_analyze() {
+    startAnalyzer() {
         if (this.middlemen || this.analyzed) {
             return
         }
@@ -68,23 +120,23 @@ class PageWrapper {
      * Does nothing for middlemen.
      *
      *
-     * @param {string} new_state
+     * @param {string} newState
      * @return {void}
      */
-    change_state(new_state) {
+    changeState(newState) {
         //you cannot change state on a middlemen
         if (this.middlemen) {
             return;
         }
 
         //Change the state of this extension for a given page, followed by a change of browser action icon
-        ExtensionManager.displayState(new_state)
+        ExtensionManager.displayState(newState)
             .catch(error => console.log("icon error " + error))
-            .then(() => this.active = new_state)
+            .then(() => this.active = newState)
             .then(() => UserSystem.saveHostState(this.host, this.active));
 
-        if (new_state === states.ACTIVE && !this.analyzed) {
-            this.start_analyze();
+        if (newState === states.ACTIVE && !this.analyzed) {
+            this.startAnalyzer();
         }
     }
 
@@ -106,9 +158,9 @@ class PageWrapper {
             .then(state => {
                 //if there is an state, change to it, else change to INACTIVE
                 if (state) {
-                    this.change_state(state);
+                    this.changeState(state);
                 } else {
-                    this.change_state(states.INACTIVE);
+                    this.changeState(states.INACTIVE);
                 }
             })
             .catch(error => console.log("error setting value", error, this));
@@ -187,7 +239,7 @@ const ExtensionManager = {
         return closing
             .then(() => browser.tabs.get(tabId))
             .then(value => {
-                let host = this.get_host(value);
+                let host = this.getHost(value);
                 //create a wrapper which injects the middlemen script to communicate with page scripts
                 this.extensionPage = this.createWrapper(host, value.url, tabId, true);
                 return this.extensionPage.init();
@@ -244,7 +296,7 @@ const ExtensionManager = {
      * @param {string} state
      */
     set currentActive(state) {
-        this.selected && this.selected.change_state(state);
+        this.selected && this.selected.changeState(state);
     },
 
     /**
@@ -257,60 +309,38 @@ const ExtensionManager = {
     },
 
     /**
+     * Processes a message from the browserAction popup.
      *
-     * @param msg
-     * @return {Promise<{state: boolean}>}
+     * @param {object} msg
+     * @return {Promise<*>}
      */
-    processStateMsg(msg) {
-        //default response is false
-        let responseState = false;
+    processPopupMsg(msg) {
+        if (msg.state) {
+            //default response is false
+            let responseState = false;
 
-        //only check if user is logged in, else return for everything false
-        if (UserSystem.logged_in_cache) {
-            if (states.any(msg.state) && this.selected) {
+            //only check if user is logged in, else return for everything false
+            if (HttpClient.loggedIn && states.any(msg.state) && this.selected) {
                 //if there is a selected wrapper, accept with true
                 this.currentActive = msg.state;
                 responseState = true;
-            } else if (msg.state === unknown) {
-                //send the current state of the selected
-                responseState = this.currentActive;
             }
+            //respond to browserAction script
+            return Promise.resolve(responseState);
         }
-        //respond to browserAction script
-        return Promise.resolve({state: responseState})
-    },
+        if (msg.unknown) {
+            return Promise.resolve({name: user.name, state: this.currentActive});
+        }
+        if (msg.login) {
+            return UserSystem.logIn(msg.login.name, msg.login.psw);
+        }
 
-    /**
-     *
-     * @param userMsg
-     * @return {Promise<{user: Object}>| never}
-     */
-    processUserMsg: function (userMsg) {
-        if (userMsg.logged_in === unknown) {
-            return UserSystem.logged_in()
-                .then(value => {
-                    return {user: {logged_in: value}};
-                });
-        } else if (userMsg.log_in) {
-            return UserSystem.log_in(userMsg.log_in.mail, userMsg.log_in.pw)
-                .then(value => {
-                    return {user: {login: value}};
-                });
-        } else if (userMsg.log_out) {
-            return UserSystem.log_out()
-                .then(() => {
-                    return {user: {logout: true}};
-                });
-        } else if (userMsg.data) {
-            return UserSystem.get_data()
-                .then(value => {
-                    return {user: {data: value}};
-                });
-        } else if (userMsg.register) {
-            return UserSystem.register(userMsg.register.mail, userMsg.register.pw)
-                .then(value => {
-                    return {user: {register: value}};
-                })
+        if (msg.register) {
+            return UserSystem.logIn(msg.login.name, msg.login.psw);
+        }
+
+        if (msg.user) {
+            return Promise.resolve({name: user.name});
         }
     },
 
@@ -356,6 +386,11 @@ const ExtensionManager = {
         }
     },
 
+
+    processResult(result) {
+        //todo implement result processor
+    },
+
     /**
      * Initiates the listener for the tabs
      * and the communication between content scripts
@@ -366,7 +401,7 @@ const ExtensionManager = {
     initListener() {
         //react to url changes in tabs, create a new wrapper each time the url changes, even if it reloads
         browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
-            let host = ExtensionManager.get_host(changeInfo.url);
+            let host = ExtensionManager.getHost(changeInfo.url);
             console.log(tabId, changeInfo);
 
             //check if url was updated
@@ -381,7 +416,7 @@ const ExtensionManager = {
             }
 
             //create a new wrapper for this page only if user is logged in
-            if_logged_in(() => {
+            ifLoggedIn(() => {
                 let wrapper = this.createWrapper(host, changeInfo.url, tabId);
                 //init the wrapper
                 wrapper.init().catch(error => console.log(`initiating wrapper failed: ${error}`));
@@ -400,10 +435,10 @@ const ExtensionManager = {
         });
 
         //set the selected tab, there can be only one
-        browser.tabs.onActivated.addListener(active_info => {
-            if_logged_in(() => {
+        browser.tabs.onActivated.addListener(activeInfo => {
+            ifLoggedIn(() => {
                 browser.tabs
-                    .get(active_info.tabId)
+                    .get(activeInfo.tabId)
                     .then(value => {
                         //check if an wrapper with this tabId is available
                         let wrapper = this.getWrapper(value.id);
@@ -418,7 +453,7 @@ const ExtensionManager = {
                             this.selected = wrapper;
                             this.displayState().catch(console.log);
                         } else {
-                            let host = this.get_host(value);
+                            let host = this.getHost(value);
                             //if there is no valid host, reset selected and return
                             if (!host) {
                                 this.selected = undefined;
@@ -442,9 +477,9 @@ const ExtensionManager = {
         //reacts to messages from content scripts of pages or the browserAction
         browser.runtime.onMessage.addListener((msg, sender) => {
             //state message come from browserAction popup
-            if (msg.state) {
+            if (msg.popup) {
                 try {
-                    return this.processStateMsg(msg);
+                    return this.processPopupMsg(msg.popup);
                 } catch (e) {
                     console.log(e);
                 }
@@ -453,16 +488,7 @@ const ExtensionManager = {
             //analyze message comes from analyzer.js
             if (msg.analyzed) {
                 try {
-                    return process_result(msg.analyzed);
-                } catch (e) {
-                    console.log(e);
-                }
-            }
-
-            //should come from page-content as middle men from page script of the associated SPA
-            if (msg.user) {
-                try {
-                    return this.processUserMsg(msg.user);
+                    return this.processResult(msg.analyzed);
                 } catch (e) {
                     console.log(e);
                 }
@@ -498,13 +524,13 @@ const ExtensionManager = {
         });
 
         //ignore all updates if extensionPage is not open, else sends it to the middle men (content script) of the SPA
-        UserSystem.on_update = update => if_logged_in(() => this.extensionPage && this.extensionPage.sendMessage({update}));
+        UserSystem.onUpdate = update => ifLoggedIn(() => this.extensionPage && this.extensionPage.sendMessage({update}));
 
         //ignore all data if extensionPage is not open, else sends it to the middle men (content script) of the SPA
-        UserSystem.on_data = data => if_logged_in(() => this.extensionPage && this.extensionPage.sendMessage({data}));
+        UserSystem.onData = data => ifLoggedIn(() => this.extensionPage && this.extensionPage.sendMessage({data}));
 
         //notify SPA of extension if open, that a server side logout occurred
-        UserSystem.on_logout = () => if_logged_in(() => this.extensionPage && this.extensionPage.sendMessage({logout: true}));
+        UserSystem.onLogout = () => ifLoggedIn(() => this.extensionPage && this.extensionPage.sendMessage({logout: true}));
     },
 
     /**
@@ -514,7 +540,7 @@ const ExtensionManager = {
      * @param {string | browser.tabs.Tab} tab or url
      * @returns {string}
      */
-    get_host(tab) {
+    getHost(tab) {
         if (!tab) {
             return ""
         }
@@ -546,36 +572,59 @@ const ExtensionManager = {
 };
 
 //fixme replaces some functions with stub functions to simulate certain behaviour
-Stub.activate();
+// Stub.activate();
 
 //initiate all listener that are relevant for the extensionManager
 ExtensionManager.initListener();
-//ask initially for login status and activate webSocket (mutual push) if logged in
-if_logged_in(UserSystem.activatePush).catch(console.log);
+//ask initially for login status
+// UserSystem.loggedIn();
+
+//todo ask initially for login status and change symbol depending on the result
+browser.browserAction.onClicked.addListener(() => {
+    // browser.browserAction
+    //     .openPopup()
+    //     .catch(error => console.log("could not open popup: ", error))
+    //     .then(() => browser.browserAction.setPopup({popup: "../ui/popup.html"}))
+    //     .then(() => console.log("hi"))
+    //     .then(() => browser.browserAction.getPopup({}))
+    //     .then(r => console.log(r));
+});
+
+
+browser.browserAction
+    .setPopup({popup: "../ui/popupProducer.html"})
+    .catch(error => console.log("could not set popup: ", error));
 
 /**
  * Executes callbacks depending on whether a user is logged in or not.
  *
- * @param {function} cb_true
- * @param cb_false
+ *
+ * @param {function} cbTrue
+ * @param cbFalse
  * @return {Promise<any | never>}
  */
-function if_logged_in(cb_true, cb_false) {
-    return UserSystem.logged_in().then(logged_in => {
-        if (logged_in) {
-            return cb_true();
+function ifLoggedIn(cbTrue, cbFalse) {
+    return new Promise(resolve => {
+        if (HttpClient.loggedIn) {
+            resolve(cbTrue());
         }
-        if (typeof cb_false === "function") {
-            return cb_false();
+        if (typeof cbFalse === "function") {
+            resolve(cbFalse());
         }
     });
 }
 
-function process_result(result) {
-    //todo implement result processor
+function addLoginListener(listener) {
+    user.addListener("session", listener);
 }
 
-function log_local(key) {
+function validateString(value) {
+    if (!(value && (typeof value === 'string' || value instanceof String))) {
+        throw Error(`'${value}' is no valid string input`);
+    }
+}
+
+function logLocal(key) {
     log(browser.storage.local.get(key))
 }
 
@@ -584,5 +633,5 @@ function log(promise) {
 }
 
 function cD() {
-    log(UserSystem.get_uid().then(uid => StoreManager.read(uid)))
+    log(UserSystem.getUuid().then(uid => StoreManager.read(uid)))
 }

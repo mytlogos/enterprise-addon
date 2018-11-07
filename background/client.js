@@ -8,7 +8,6 @@ class Client extends EventTarget {
         if (window.WSClient) {
             throw Error("only one client instance is allowed");
         }
-        this.offline = false;
     }
 
     /***
@@ -20,42 +19,10 @@ class Client extends EventTarget {
      */
     startPush() {
         return new Promise(resolve => {
-            if (this.offline) {
-                throw Error("please verify that server is online")
-            }
-            //for now opens webSocket without tls
-            this.socket = new WebSocket("ws://localhost:80/");
+            //fixme for now opens webSocket without tls
+            this.socket = new WebSocket("ws://localhost:3000/");
             this.socket.onmessage = this.pushed;
             this.socket.onopen = () => resolve();
-        });
-    }
-
-    /***
-     * Sends a JSON Request to the server of this extension.
-     * If the server is unreachable, the client is marked as offline, else online.
-     * Returns the JSON Response if status is ok or undefined.
-     *
-     * @param request object to stringify
-     * @return {Promise<Object | void>}
-     */
-    request(request) {
-        return fetch("http://localhost/api", {
-            method: "GET",
-            mode: "cors",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify(request)
-        }).then(response => {
-            this.offline = false;
-            //http status should ever be only ok
-            if (response.ok) {
-                return response.json();
-            }
-            return undefined;
-        }).catch(() => {
-            this.offline = true;
-            return undefined;
         });
     }
 
@@ -114,9 +81,192 @@ class Client extends EventTarget {
 }
 
 /**
- * Possible Events for this Client.
+ * Allowed Methods for the API.
  *
- * @type {{REGISTER: string, LOGIN: string, LOGGED: string, LOGOUT: string, DATA: string, UPDATE: string, any(string): boolean}}
+ * @type {{post: string, get: string, put: string, delete: string}}
+ */
+const Methods = {
+    post: "POST",
+    get: "GET",
+    put: "PUT",
+    delete: "DELETE"
+};
+
+const HttpClient = {
+
+    get loggedIn() {
+        return Boolean(user.uuid);
+    },
+
+    /**
+     *
+     * @param {string} uuid
+     * @param {string} session
+     * @param {string} name
+     */
+    setUser({uuid, session, name}) {
+        try {
+            user
+                .clear()
+                .setName(name)
+                .setId(uuid)
+                .setSession(session)
+        } catch (e) {
+            //in case some error happened while adding new data,
+            //clear any rest data and rethrow error
+            user.clear();
+            throw e;
+        }
+    },
+
+    /**
+     * Checks whether a user is currently logged in on this device.
+     *
+     * @return {Promise<boolean>}
+     */
+    isLoggedIn() {
+        return this
+            .queryServer({auth: false})
+            .then(result => {
+                if (!result) {
+                    return false;
+                }
+                this.setUser(result);
+                return true;
+            })
+    },
+
+    /**
+     * @param {string} userName
+     * @param {string} psw
+     *
+     * @return {Promise<boolean>}
+     */
+    login(userName, psw) {
+        //need to be logged out to login
+        if (HttpClient.loggedIn) {
+            return Promise.reject();
+        }
+
+        if (!userName || !psw) {
+            return Promise.reject();
+        }
+
+        return this
+            .queryServer({
+                query: {
+                    userName: userName,
+                    pw: psw
+                },
+                path: "login",
+                method: Methods.post,
+                auth: false
+            })
+            .then(result => {
+                this.setUser(result);
+                return true;
+            });
+    },
+
+    /**
+     * @param {string} userName
+     * @param {string} psw
+     * @param {string} psw_repeat
+     *
+     * @return {Promise<boolean>}
+     */
+    register(userName, psw, psw_repeat) {
+        //need to be logged out to login
+        if (HttpClient.loggedIn) {
+            return Promise.reject("already logged in");
+        }
+        if (psw !== psw_repeat) {
+            //todo show incorrect password
+            return Promise.reject(status.INVALID_REQUEST);
+        }
+
+        return this
+            .queryServer({
+                query: {
+                    userName: userName,
+                    pw: psw
+                },
+                path: "register",
+                method: Methods.post,
+                auth: false
+            })
+            .then(result => {
+                this.setUser(result);
+                return true;
+            });
+    },
+
+
+    /**
+     * @return {Promise<boolean>}
+     */
+    logout() {
+        return this
+            .queryServer({
+                path: "logout",
+                method: Methods.post,
+            })
+            .then(result => result)
+            .then(loggedOut => {
+                user.clear();
+
+                if (!loggedOut) {
+                    //todo show error msg, but still clear data?
+                }
+                return loggedOut;
+            })
+            .catch(error => console.log(error));
+    },
+
+
+    /**
+     *
+     * @param {Object?} query
+     * @param {string?} path
+     * @param {string?} method
+     * @param {boolean?} auth
+     * @return {Promise<Object>}
+     */
+    queryServer({query, path = "", method = Methods.get, auth = true} = {}) {
+        if (auth) {
+            if (!user.uuid) {
+                throw Error("cannot send user message if no user is logged in")
+            }
+            if (!query) {
+                query = {};
+            }
+            query.uuid = user.uuid;
+            query.session = user.session;
+        }
+        let init = {
+            method: method,
+            headers: {
+                "Content-Type": "application/json; charset=utf-8",
+            },
+        };
+        //append json query if
+        if (query) {
+            init.body = JSON.stringify(query);
+        }
+        //fixme change url to real server address
+        return fetch(`http://localhost:3000/api/user/${path}`, init)
+            .then(response => response.json())
+            .then(result => {
+                if (result.error) {
+                    return Promise.reject(result.error);
+                }
+                return result;
+            });
+    },
+};
+
+/**
+ * Possible Events for this Client.
  */
 const events = {
     REGISTER: "register",

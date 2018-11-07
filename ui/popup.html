@@ -6,15 +6,34 @@
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-<main>
-    <button type="button" id="open" class="btn">Open</button>
-    <span>Active</span>
+<header>
+    <span class="user-name"></span>
     <!-- Rounded switch -->
     <label class="switch">
         <input id="active_switch" type="checkbox">
         <span class="slider round"></span>
     </label>
+</header>
+<main>
+    <div class="content hidden">
+        You are currently <span class="action">-</span>:
+        <div class="title">-</div>
+        <span class="part-identifier">-</span>:
+        <div class="part-name">-</div>
+        <span class="medium">-</span>:
+        <div class="medium-name">-</div>
+    </div>
+    <div class="nothing">
+        Nothing found for this page.
+    </div>
+    <div class="progress"></div>
 </main>
+<footer>
+    <button type="button" class="open btn">
+        Open Enterprise
+    </button>
+</footer>
+<script src="radialIndicator.js"></script>
 <script src="popup.js"></script>
 </body>
 </html>
