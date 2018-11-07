@@ -1,6 +1,9 @@
-# IntelliJ project files
-.idea
-*.iml
-
+.idea/
+experimental/
+example_data/
 antiAdScript.js
+client_server.uxf
+proces.uxf
+readability.uxf
+titleGetter.uxf
 animator/go-debug.js
