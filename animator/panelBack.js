@@ -1,6 +1,6 @@
 let root;
 let url;
-let current;
+let node;
 
 /**
  *
@@ -11,7 +11,7 @@ function updateTree(content) {
     let parent = parents[0];
 
     let item = new TreeItem(content.current, parent);
-    current = item;
+    node = item;
 
     //does not accept first generation items (no parents)
     if (!parents.length) {
@@ -440,7 +440,7 @@ const history = {
         let data = generateData(id, currentItem);
         updateTree(data);
 
-        currentItem = current;
+        currentItem = node;
         depth++;
         id++;
     }

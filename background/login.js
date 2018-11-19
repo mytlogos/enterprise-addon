@@ -214,7 +214,7 @@ WSClient.addEventListener(events.LOGOUT, () => {
 setInterval(() => {
     try {
         if (!user.session) {
-            // UserSystem.loggedIn().catch(console.log);
+            UserSystem.loggedIn().catch(console.log);
         }
     } catch (e) {
 

@@ -40,7 +40,7 @@ const radialObj = radialIndicator(".progress", {
 });
 
 //todo replace browser message with browser backgroundPage
-/*browser.runtime.onMessage.addListener(msg => {
+browser.runtime.onMessage.addListener(msg => {
     if (msg.info) {
         processInfo(msg.info);
     }
@@ -62,20 +62,7 @@ browser.runtime
             processInfo(msg.info);
         }
     })
-    .catch(console.log);*/
-
-setTimeout(() => {
-    processInfo({
-        title: "hi",
-        type: "h2",
-        name: "h3",
-        action: "h4",
-        part: {
-            name: "ha1",
-            type: "ha2"
-        },
-    })
-}, 5000);
+    .catch(console.log);
 
 function processInfo(info) {
     document.querySelector(".content").classList.remove("hidden");

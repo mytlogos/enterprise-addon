@@ -1,6 +1,3 @@
-//fixme remove this later
-// ProgressChecker.onProgress = progress => Display.setProgress(`${(progress * 100).toFixed(1)}%`);
-
 const OverWatch = (function () {
     function addInfo(name, textProcessor, defaultValue = "N/A") {
         const info = document.createElement("div");
@@ -66,9 +63,10 @@ const OverWatch = (function () {
                 name: name.get(),
                 volume: volume.get(),
                 chapter: chapter.get(),
-                url: document.location
+                url: document.location.href,
             }
-        });
+        }).catch(error => console.log(error))
+            .then(() => console.log("message send"));
     }
 
     function fadeOut() {
@@ -135,7 +133,7 @@ const OverWatch = (function () {
                 return;
             }
 
-            const meta = MetaExtractor.extractMeta(result);
+            let meta = MetaExtractor.extractMeta(result);
 
             if (!meta) {
                 return;
@@ -159,21 +157,29 @@ const OverWatch = (function () {
     }
 })();
 
-browser.runtime.onMessage.addListener((msg) => {
-    if (!msg) {
-        return
-    }
+browser.runtime.onMessage.addListener((msg, sender) => {
+
+    console.log("from", sender, "got", msg);
 
     if (msg.start) {
         //if document is not fully loaded yet, listen to the load event, else start immediately
         if (document.readyState !== "complete") {
-            window.addEventListener("load", OverWatch.start);
+            window.addEventListener("load", () => {
+                try {
+                    OverWatch.start();
+                } catch (e) {
+                    console.log(e);
+                }
+            });
         } else {
-            OverWatch.start();
+            try {
+                OverWatch.start();
+            } catch (e) {
+                console.log(e);
+            }
         }
-        return
+        return;
     }
-
 
     //any messages beyond this point are dev messages
     if (msg.animator !== null) {

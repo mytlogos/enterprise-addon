@@ -1,9 +1,9 @@
 .idea/
-experimental/
+#experimental/
 example_data/
 antiAdScript.js
 client_server.uxf
 proces.uxf
 readability.uxf
 titleGetter.uxf
-animator/go-debug.js
+external/go-debug.js

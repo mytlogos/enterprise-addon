@@ -11,7 +11,7 @@ header {
     display: flex;
     justify-content: space-between;
     padding: 10px;
-    font-size: 2em;
+    font-size: 1.5em;
 }
 
 main {
@@ -26,10 +26,13 @@ footer {
     padding: 10px;
 }
 
-.content > * {
-    padding: 10px 0 0 0;
+.content {
     width: 100%;
     height: 100%;
+}
+
+.content > * {
+    padding: 10px 0;
 }
 
 .nothing {

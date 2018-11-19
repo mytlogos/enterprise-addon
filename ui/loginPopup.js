@@ -135,10 +135,6 @@ document.querySelectorAll("input").forEach(value => value.addEventListener("keyu
     }
 }));
 
-
-window.addEventListener("resize", () => console.log("hello no"));
-document.addEventListener("resize", () => console.log("hello no"));
-
 function switchVisibility({hide, show}) {
     document.querySelectorAll(hide).forEach(value => value.classList.add("hidden"));
     document.querySelectorAll(show).forEach(value => value.classList.remove("hidden"));

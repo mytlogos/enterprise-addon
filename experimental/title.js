@@ -780,8 +780,8 @@ function annotateDOM() {
 }
 
 function testTitle() {
-    Analyzer.id = idGenerator();
-    let content = Analyzer.getMain();
+    ExAnalyzer.id = idGenerator();
+    let content = ExAnalyzer.getMain();
 
     if (!content) {
         console.log("found nothing");

@@ -2,6 +2,8 @@
  * This Analyzer is a modified version of Mozilla's Readability:
  * https://github.com/mozilla/readability/blob/master/Readability.js
  *
+ * It identifies the main text/s, videos, audios and images/image strips
+ * on the current document.
  */
 const Analyzer = {
     /**
@@ -10,6 +12,10 @@ const Analyzer = {
      */
     running: false,
 
+    /**
+     *
+     * @return {void|boolean|AnalyzeResult|Array<AnalyzeResult>}
+     */
     analyze() {
         this.id = idGenerator();
         //analyze can only run once
@@ -20,14 +26,18 @@ const Analyzer = {
 
         let main;
         try {
-            main = this.getMain();
+            this.normalize(document.body);
+            //run the scoring algorithm
+            let candidates = this.initialize(document);
+
+            //select the content from candidates
+            main = ContentSelector.getContent(candidates);
         } catch (e) {
             console.log(e);
         }
-
+        console.log(main);
         this.running = false;
         return main;
-        //todo is encountered, like a video etc.
         //todo ask what should be expected if this is not the first time sth of this "series"
     },
 
@@ -253,73 +263,10 @@ const Analyzer = {
 
     /**
      *
-     * @param {Set} candidates
-     * @return {Object|boolean}
+     * @param args
+     * @return {Map<any, any>}
      */
-    getContent(candidates) {
-        //remove any duplicate candidates
-        let sortedCandidates = Array.from(candidates);
-        //sort candidates with greatest candidates first
-        sortedCandidates.sort((a, b) => a.enterprise.contentScore - b.enterprise.contentScore).reverse();
-
-        //todo do more?
-
-        let filteredCandidates = sortedCandidates.filter((value, index, array) => {
-            //filter out unsuitable candidates, we need 'content'
-            let enterprise = value.enterprise;
-            if (!enterprise.audioLength
-                && !enterprise.videoLength
-                && !enterprise.imageLength
-                && enterprise.totalChars < 50
-                || !this.isVisible(value)) {
-                return false;
-            }
-
-            //if there is an ancestor which is a better candidate (higher rank) than value, filter value out
-            for (let i = index - 1; i >= 0; i--) {
-                let item = array[i];
-
-                //if item is ancestor of value
-                if (this.isAncestor(value, item) &&
-                    enterprise.audioLength < item.enterprise.audioLength &&
-                    enterprise.videoLength < item.enterprise.videoLength &&
-                    enterprise.imageLength < item.enterprise.imageLength) {
-                    return false;
-                }
-            }
-
-            return true;
-        });
-
-        let filteredOut = new Set(candidates);
-        filteredCandidates.forEach(value => filteredOut.delete(value));
-
-        const bodyContent = document.body.enterprise;
-
-        if (!bodyContent) {
-            return false;
-        }
-
-        const videoContent = bodyContent.videoLength && this.isVideoContent(filteredCandidates);
-        const audioContent = bodyContent.audioLength && this.isAudioContent(filteredCandidates);
-        const imageContent = bodyContent.imageLength && this.isImageContent(filteredCandidates);
-        const textContent = bodyContent.totalChars && this.isTextContent(filteredCandidates);
-        const tocContent = bodyContent.linkLength && this.isToCContent(sortedCandidates);
-
-        return textContent || videoContent || audioContent || imageContent || tocContent;
-    },
-
     queryText(...args) {
-        /*if (Array.isArray(args[0])) {
-            let result = [];
-
-            for (let arg of args) {
-                result.push(this.queryText(arg));
-            }
-
-            return result;
-        }*/
-
         if (!args.length) {
             return new Map();
         }
@@ -364,6 +311,13 @@ const Analyzer = {
         return result;
     },
 
+    /**
+     * Creates a treeWalker, which starts walking from the given node
+     * or the body of the documents and only accepts textNodes.
+     *
+     * @param {Node?} root
+     * @return {TreeWalker}
+     */
     createTextWalker(root = document.body) {
         return document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
             acceptNode: node => {
@@ -376,6 +330,8 @@ const Analyzer = {
     },
 
     /**
+     * Executes the callback for each node under the current node.
+     * Evaluates the nearest node with the right type
      *
      * @param {TreeWalker} walker
      * @param {function} callback
@@ -383,10 +339,11 @@ const Analyzer = {
      */
     forEachNode(walker, callback, evalCurrent = true) {
         if (evalCurrent) {
-            if (walker.whatToShow === walker.currentNode.nodeType) {
-                callback(walker.currentNode);
+            let currentNode = walker.currentNode;
+
+            if (TypeFilterMatcher.matchFilter(walker.whatToShow, currentNode.nodeType)) {
+                callback(currentNode);
             } else {
-                let currentNode = walker.currentNode;
                 let otherNode;
 
                 if (currentNode !== (otherNode = walker.nextNode()) && otherNode) {
@@ -394,7 +351,7 @@ const Analyzer = {
                 } else if (currentNode !== (otherNode = walker.previousNode()) && otherNode) {
                     walker.nextNode();
                 } else {
-                    callback(walker.currentNode);
+                    callback(currentNode);
                 }
             }
         }
@@ -406,6 +363,9 @@ const Analyzer = {
     },
 
     /**
+     * TreeWalker which traverses the ElementTree of element.
+     * Accepts only elements which are not to be skipped
+     * and do not have negative classNames or id´s.
      *
      * @param {HTMLElement} element
      * @return {TreeWalker}
@@ -425,6 +385,13 @@ const Analyzer = {
         );
     },
 
+    /**
+     * Returns the text which does not stem from negative
+     * elements.
+     *
+     * @param {HTMLElement} element
+     * @return {string}
+     */
     getNonNegativeText(element) {
         let text = "";
 
@@ -437,6 +404,9 @@ const Analyzer = {
     },
 
     /**
+     * Traverses the element ancestry of element
+     * and checks if element has a parent with a
+     * negative classWeight.
      *
      * @param {HTMLElement} element
      * @param {HTMLElement} maxParent
@@ -459,6 +429,14 @@ const Analyzer = {
         throw Error("element and maxParent are not of the same tree");
     },
 
+    /**
+     * Checks whether possibleAncestor is an ancestor
+     * of element.
+     *
+     * @param {HTMLElement} element
+     * @param {HTMLElement} possibleAncestor
+     * @return {boolean}
+     */
     isAncestor(element, possibleAncestor) {
         while (element = element.parentElement) {
             if (element === possibleAncestor) {
@@ -466,175 +444,6 @@ const Analyzer = {
             }
         }
         return false;
-    },
-
-    /**
-     *
-     * @param {HTMLElement} start
-     * @param {HTMLElement} end
-     * @param {string} type
-     * @param {boolean?} seeAble
-     * @param {boolean?} durationAble
-     * @return {boolean|{start: HTMLElement, end: HTMLElement, seeAble: boolean, durationAble?: boolean}}
-     */
-    createResult(start, end, type, seeAble, durationAble) {
-        return start && end && {start, end, type, seeAble, durationAble}
-    },
-
-    /**
-     *
-     * @param {Array} candidates
-     * @return {*|boolean|{start: HTMLElement, end: HTMLElement, seeAble: boolean, durationAble?: boolean}}
-     */
-    isToCContent(candidates) {
-        // noinspection JSCheckFunctionSignatures
-        candidates = candidates.filter(element => element.enterprise
-            .links.some(link => {
-                if (link.textContent.match(/\d/)) {
-                    return true;
-                }
-
-                return false;
-            }));
-
-
-        candidates.forEach(value => {
-
-        });
-        return this.createResult(null, null, "toc");
-    },
-
-    /**
-     *
-     * @param {Array} candidates
-     */
-    isTextContent(candidates) {
-        //todo what if multiple chapters/textContents are available? (e.g. infinity scroll)
-        candidates = candidates.filter(element => {
-            const positiveText = this.getNonNegativeText(element);
-            const positiveContent = this._getCharCount(positiveText);
-
-            element.enterprise.positiveChars = positiveContent;
-            return positiveContent > 50;
-        });
-        let topCandidate = candidates[0];
-
-        while (topCandidate = candidates.shift()) {
-            let nextCandidate = candidates[0];
-
-            if (!nextCandidate || !this.isAncestor(nextCandidate, topCandidate)) {
-                break
-            }
-
-            let diffPosChars = topCandidate.enterprise.positiveChars - nextCandidate.enterprise.positiveChars;
-
-            if (diffPosChars < 0 || diffPosChars > 5) {
-                break
-            }
-        }
-
-        if (!topCandidate) {
-            return;
-        }
-
-        let contents = topCandidate.enterprise.contents;
-
-        let first = contents[0];
-        let last = contents[contents.length - 1];
-
-        let result = this.createResult(first, last, "text", true);
-
-        if (!result) {
-            return result;
-        }
-
-        return result;
-    },
-
-    /**
-     *
-     * @param {Array} candidates sorted candidates for possible content
-     */
-    isImageContent(candidates) {
-        candidates = candidates.filter(value => {
-            if (!value.enterprise.imageLength) {
-                return false;
-            }
-            return value.enterprise.images = value.enterprise.images
-                .filter(img =>
-                    this.hasNoNegativeParent(img) &&
-                    img.height > 200 &&
-                    img.width > 200);
-        });
-
-        const max = arrayMax(candidates, (a, b) => {
-            const aImg = a.enterprise.imageLength;
-            const bImg = b.enterprise.imageLength;
-
-            if (aImg > bImg) {
-                return a;
-            } else if (aImg === bImg) {
-                if (this.isAncestor(a, b)) {
-                    return a;
-                } else if (this.isAncestor(b, a)) {
-                    return b;
-                } else {
-                    return a.enterprise.contentScore >= b.enterprise.contentScore ? a : b;
-                }
-            } else {
-                return b;
-            }
-        });
-
-        if (!max) {
-            return;
-        }
-
-        let start = max.enterprise.images[0];
-        let end = max.enterprise.images[max.enterprise.images.length - 1];
-
-        return this.createResult(start, end, "image", true);
-    },
-
-    /**
-     *
-     * @param {Array} candidates
-     */
-    isVideoContent(candidates) {
-        candidates = candidates.filter(value => value.enterprise.videoLength);
-        //todo implement video content
-        let topCandidate = candidates[0];
-
-        if (!topCandidate) {
-            return
-        }
-
-        const video = topCandidate.enterprise.videos[0];
-        return topCandidate && this.createResult(video, video, "video", true, true);
-    },
-
-    /**
-     *
-     * @param {Array} candidates
-     */
-    isAudioContent(candidates) {
-        candidates = candidates.filter(value => value.enterprise.audioLength);
-
-        //todo implement audio content
-        let topCandidate = candidates[0];
-        if (!topCandidate) {
-            return
-        }
-        const audio = topCandidate.enterprise.audios[0];
-        return topCandidate && this.createResult(audio, audio, "audio", false, true);
-    },
-
-    getMain() {
-        let doc = document;
-        this.normalize(doc.body);
-        let candidates = this.initialize(doc);
-
-        return this.getContent(candidates);
     },
 
     /**
@@ -840,6 +649,13 @@ const Analyzer = {
         }
     },
 
+    /**
+     * Creates a content Object, which is intended for the
+     * Developer Tool.
+     *
+     * @param {HTMLElement} element
+     * @return {*}
+     */
     createContent(element) {
         let tag = element.tagName.toLowerCase();
         let id = tag === "body" ? 0 : this.id.next().value;
@@ -953,7 +769,330 @@ const Analyzer = {
     },
 };
 
+const ContentSelector = {
+
+    /**
+     *
+     * @param {Set} candidates
+     * @return {boolean|AnalyzeResult|Array<AnalyzeResult>}
+     */
+    getContent(candidates) {
+        //remove any duplicate candidates
+        let sortedCandidates = Array.from(candidates);
+        //sort candidates with greatest candidates first
+        sortedCandidates.sort((a, b) => a.enterprise.contentScore - b.enterprise.contentScore).reverse();
+
+        //todo do more?
+
+        let filteredCandidates = sortedCandidates.filter((value, index, array) => {
+            //filter out unsuitable candidates, we need 'content'
+            let enterprise = value.enterprise;
+            if (!enterprise.audioLength
+                && !enterprise.videoLength
+                && !enterprise.imageLength
+                && enterprise.totalChars < 50
+                || !Analyzer.isVisible(value)) {
+                return false;
+            }
+
+            //if there is an ancestor which is a better candidate (higher rank) than value, filter value out
+            for (let i = index - 1; i >= 0; i--) {
+                let item = array[i];
+
+                //if item is ancestor of value
+                if (Analyzer.isAncestor(value, item) &&
+                    enterprise.audioLength < item.enterprise.audioLength &&
+                    enterprise.videoLength < item.enterprise.videoLength &&
+                    enterprise.imageLength < item.enterprise.imageLength) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+
+        let filteredOut = new Set(candidates);
+        filteredCandidates.forEach(value => filteredOut.delete(value));
+
+        const bodyContent = document.body.enterprise;
+
+        if (!bodyContent) {
+            return false;
+        }
+
+        const textContent = bodyContent.totalChars && this.isTextContent(filteredCandidates);
+        const videoContent = bodyContent.videoLength && this.isVideoContent(filteredCandidates);
+        const audioContent = bodyContent.audioLength && this.isAudioContent(filteredCandidates);
+        const imageContent = bodyContent.imageLength && this.isImageContent(filteredCandidates);
+        const tocContent = bodyContent.linkLength && this.isToCContent(sortedCandidates);
+
+        return textContent || videoContent || audioContent || imageContent || tocContent;
+    },
+
+    /**
+     *
+     * @param {Array<HTMLElement>} candidates
+     * @return {boolean|AnalyzeResult}
+     */
+    isToCContent(candidates) {
+        //todo implement ToC selector
+        // noinspection JSUnresolvedVariable
+        candidates = candidates.filter(element =>
+            element.enterprise.links.some(link => {
+                    if (link.textContent.match(/\d/)) {
+                        return true;
+                    }
+
+                    return false;
+                }
+            )
+        );
+
+        candidates.forEach(value => {
+
+        });
+        return this.createResult(null, null, "toc");
+    },
+
+    /**
+     *
+     * @param {Array<*>} candidates
+     * @return {void|boolean|AnalyzeResult|Array<AnalyzeResult>}
+     */
+    isTextContent(candidates) {
+        //fixme does not seem to give stable results, because page is loaded differently??
+        //fixme or content are too different?
+        let outFiltered = [];
+
+        //filter candidates who have real text content
+        candidates = candidates.filter(element => {
+            const positiveText = Analyzer.getNonNegativeText(element);
+            const positiveContent = Analyzer._getCharCount(positiveText);
+
+            element.enterprise.positiveChars = positiveContent;
+            return positiveContent > 50;
+        });
+
+        //prepare a list of candidates to remove
+        let result = candidates.filter(value => {
+            let removeProbably = [];
+
+            for (let candidate of candidates) {
+                //continue if candidate is no child of value
+                if (value === candidate || !Analyzer.isAncestor(candidate, value)) {
+                    continue;
+                }
+
+                let candidatePosChars = candidate.enterprise.positiveChars;
+                let valuePosChars = value.enterprise.positiveChars;
+
+                if ((valuePosChars - candidatePosChars) > 5) {
+                    //if the difference between positiveChars is too big,
+                    //the child is surely missing things, so remove it
+                    removeProbably.push(candidate);
+                } else if (valuePosChars === candidatePosChars) {
+                    //if value (parent) has same posChars as candidate(child) remove value
+                    outFiltered.push(value);
+                }
+            }
+            let totalPosCharsRemove = 0;
+
+            for (let element of removeProbably) {
+                totalPosCharsRemove += element.enterprise.positiveChars;
+            }
+            //check if value is only a container for multiple contents
+            if ((value.enterprise.positiveChars - totalPosCharsRemove) < 5) {
+                outFiltered.push(value);
+            } else {
+                outFiltered.push(...removeProbably);
+            }
+            return true;
+        });
+
+        //remove candidates which have a better
+        //candidate in the direct lineage of their element
+        result = result.filter(value => !outFiltered.includes(value));
+
+        //map the candidates to processable results
+        result = result.map(candidate => {
+            let contents = candidate.enterprise.contents;
+
+            let first = contents[0];
+            let last = contents[contents.length - 1];
+
+            return this.createResult(first, last, "text", true);
+        });
+
+        if (result.length === 1) {
+            //return only the only item if there is one
+            return result[0];
+        } else if (result.length > 1) {
+            //return all remaining results if there are more than one
+            return result;
+        }
+    },
+
+    /**
+     *
+     * @param {Array} candidates sorted candidates for possible content
+     * @return {boolean|void|AnalyzeResult}
+     */
+    isImageContent(candidates) {
+        candidates = candidates.filter(value => {
+            if (!value.enterprise.imageLength) {
+                return false;
+            }
+            return value.enterprise.images = value.enterprise.images
+                .filter(img =>
+                    Analyzer.hasNoNegativeParent(img) &&
+                    img.height > 200 &&
+                    img.width > 200);
+        });
+
+        const max = arrayMax(candidates, (a, b) => {
+            const aImg = a.enterprise.imageLength;
+            const bImg = b.enterprise.imageLength;
+
+            if (aImg > bImg) {
+                return a;
+            } else if (aImg === bImg) {
+                if (Analyzer.isAncestor(a, b)) {
+                    return a;
+                } else if (Analyzer.isAncestor(b, a)) {
+                    return b;
+                } else {
+                    return a.enterprise.contentScore >= b.enterprise.contentScore ? a : b;
+                }
+            } else {
+                return b;
+            }
+        });
+
+        if (!max) {
+            return;
+        }
+
+        let start = max.enterprise.images[0];
+        let end = max.enterprise.images[max.enterprise.images.length - 1];
+
+        return this.createResult(start, end, "image", true);
+    },
+
+    /**
+     *
+     * @param {Array} candidates
+     * @return {boolean|void|AnalyzeResult}
+     */
+    isVideoContent(candidates) {
+        candidates = candidates.filter(value => value.enterprise.videoLength);
+        //todo implement video content
+        let topCandidate = candidates[0];
+
+        if (!topCandidate) {
+            return
+        }
+
+        const video = topCandidate.enterprise.videos[0];
+        return topCandidate && this.createResult(video, video, "video", true, true);
+    },
+
+    /**
+     *
+     * @param {Array} candidates
+     * @return {boolean|AnalyzeResult|void}
+     */
+    isAudioContent(candidates) {
+        candidates = candidates.filter(value => value.enterprise.audioLength);
+
+        //todo implement audio content
+        let topCandidate = candidates[0];
+        if (!topCandidate) {
+            return
+        }
+        const audio = topCandidate.enterprise.audios[0];
+        return topCandidate && this.createResult(audio, audio, "audio", false, true);
+    },
+
+
+    /**
+     * Creates a Result object.
+     *
+     * @param {HTMLElement} start
+     * @param {HTMLElement} end
+     * @param {string} type
+     * @param {boolean?} seeAble
+     * @param {boolean?} durationAble
+     * @return {boolean|AnalyzeResult}
+     */
+    createResult(start, end, type, seeAble, durationAble) {
+        return start && end && {start, end, type, seeAble, durationAble}
+    },
+
+};
+
+const TypeFilterMatcher = (function generateTypeFilterMap() {
+    let typeEnd = "_NODE";
+    let typeEndLength = typeEnd.length;
+
+    let typesKeys = Object
+        .keys(Node)
+        .map(key => {
+            if (!key.endsWith(typeEnd)) {
+                return;
+            }
+            return {
+                key: key.substring(0, key.length - typeEndLength).toUpperCase(),
+                value: Node[key]
+            }
+        })
+        .filter(value => value);
+
+    let filterStart = "SHOW_";
+    let filterStartLength = filterStart.length;
+
+    let filterKeys = Object
+        .keys(NodeFilter)
+        .map(key => {
+            if (!key.startsWith(filterStart)) {
+                return;
+            }
+            return {
+                key: key.substring(filterStartLength).toUpperCase(),
+                value: NodeFilter[key]
+            }
+        }).filter(value => value);
+
+    const typeFilterMap = new Map();
+    const filterTypeMap = new Map();
+
+    typesKeys.forEach(value => {
+        let filterKeyValue = filterKeys.find(key => key.key === value.key);
+
+        //should not happen, but who knows
+        if (!filterKeyValue) {
+            console.log(`${value.key} has no corresponding filter`);
+            return;
+        }
+
+        typeFilterMap.set(value.value, filterKeyValue.value);
+        filterTypeMap.set(filterKeyValue.value, value.value);
+    });
+
+    return {
+        matchNode(nodeType, filterType) {
+            return typeFilterMap.get(nodeType) === filterType;
+        },
+
+        matchFilter(filterType, nodeType) {
+            return filterTypeMap.get(filterType) === nodeType;
+        }
+    };
+})();
+
 /**
+ *
+ * Returns the a generator, which generates
+ * a sequence of numbers.
  *
  * @return {IterableIterator<number>}
  */
@@ -1001,29 +1140,20 @@ const Selector = {
 };
 
 const OtherSelector = {
-    previousElementSibling(element) {
-        if (element.previousElementSibling !== 'undefined') {
-            return element.previousElementSibling;
-        } else {
-            // Loop through ignoring anything not an element
-            while (element = element.previousSibling) {
-                if (element.nodeType === 1) {
-                    return element;
-                }
-            }
-        }
-    },
 
-    /*
-    * Generate a Selector for a given element.
-    */
+    /**
+     * Generate a Selector for a given element.
+     *
+     * @param {HTMLElement} element
+     * @return {string|boolean}
+     */
     getQuerySelector(element) {
         // False on non-elements
         if (!(element instanceof HTMLElement)) {
             return false;
         }
         let path = [];
-        while (element.nodeType === Node.ELEMENT_NODE) {
+        while (element && element.nodeType === Node.ELEMENT_NODE) {
             let selector = element.nodeName;
             if (element.id) {
                 selector += ('#' + element.id);
@@ -1035,7 +1165,7 @@ const OtherSelector = {
                 let siblingSelectors = [];
                 while (sibling !== null && sibling.nodeType === Node.ELEMENT_NODE) {
                     siblingSelectors.unshift(sibling.nodeName);
-                    sibling = this.previousElementSibling(sibling);
+                    sibling = sibling.previousElementSibling;
                 }
                 // :first-child does not apply to HTML
                 if (siblingSelectors[0] !== 'HTML') {
@@ -1044,16 +1174,30 @@ const OtherSelector = {
                 selector = siblingSelectors.join(' + ');
             }
             path.unshift(selector);
-            element = element.parentNode;
+            element = element.parentElement;
         }
         return path.join(' > ');
     }
 };
 
-function arrayMax(array, predicate = (a, b) => Math.max(a, b)) {
-    return array.length && array.reduce(predicate);
+/**
+ * Returns the 'biggest' element of the given array.
+ * If no comparator is given, it returns the biggest number.
+ *
+ * @param {Array} array
+ * @param {function?} comparator
+ * @return {number | *}
+ */
+function arrayMax(array, comparator = (a, b) => Math.max(a, b)) {
+    return array.length && array.reduce(comparator);
 }
 
+/**
+ *
+ * @param {Object} message
+ * @param {boolean?} dev
+ * @return {Promise<*>}
+ */
 function sendMessage(message, dev) {
     if (dev) {
         message.url = window.location.href;
@@ -1067,3 +1211,13 @@ function sendMessage(message, dev) {
 }
 
 window.addEventListener("unload", () => sendMessage({analyzer: false}, true));
+
+/**
+ * @typedef {Object} AnalyzeResult
+ *
+ * @property {HTMLElement} start
+ * @property {HTMLElement} end
+ * @property {string} type
+ * @property {boolean} seeAble
+ * @property {boolean} durationAble
+ */

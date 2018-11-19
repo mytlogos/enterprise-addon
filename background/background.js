@@ -85,13 +85,11 @@ class PageWrapper {
      * @param {string} host
      * @param {string} url
      * @param {number} tabId
-     * @param {boolean} middlemen
      */
-    constructor(host, url, tabId, middlemen = false) {
+    constructor(host, url, tabId) {
         this.host = host;
         this.url = url;
         this.tabId = tabId;
-        this.middlemen = middlemen;
 
         this.active = states.INACTIVE;
         this.analyzed = false;
@@ -99,17 +97,17 @@ class PageWrapper {
     }
 
     /**
-     * Starts a Analysis on this Page if it is no middlemen or analyzed yet.
-     * Does nothing for middlemen.
+     * Starts a Analysis on this Page if it is not analyzed yet.
      *
      * @return {void}
      */
     startAnalyzer() {
-        if (this.middlemen || this.analyzed) {
+        if (this.analyzed) {
             return
         }
 
         this.analyzed = true;
+        console.log("starting analyzer for " + this.host);
         this.sendMessage({start: true}).catch(error => console.log(`error starting analyzer: ${error}`))
     }
 
@@ -117,17 +115,12 @@ class PageWrapper {
      * Changes the icon according the new state of this wrapper.
      * Saves the new state in storage and starts the analyzer if
      * it is the first time the state 'Active' is reached.
-     * Does nothing for middlemen.
      *
      *
      * @param {string} newState
      * @return {void}
      */
     changeState(newState) {
-        //you cannot change state on a middlemen
-        if (this.middlemen) {
-            return;
-        }
 
         //Change the state of this extension for a given page, followed by a change of browser action icon
         ExtensionManager.displayState(newState)
@@ -145,14 +138,9 @@ class PageWrapper {
      * Checks the local state of the host for the current user
      * and changes the state of this wrapper accordingly.
      *
-     * Does nothing for middlemen.
-     *
      * @returns {Promise<any[] | void>}
      */
     init() {
-        if (this.middlemen) {
-            return Promise.resolve();
-        }
         //look if this extension was activated for this host before
         return UserSystem.getState(this.host)
             .then(state => {
@@ -174,13 +162,18 @@ class PageWrapper {
      * @return {Promise<any>}
      */
     sendMessage(message, attempts = 0) {
+        //should throw an error only if no content script is available yet,
+        //it should be ensured that no code that is executed from message handler
+        //throws an error, e.g. all error are caught before it propagates to here
         return browser.tabs.sendMessage(this.tabId, message).catch(error => {
             if (attempts >= 5) {
                 console.log(`could not reach any content script ${attempts} with ${error}`);
                 return;
             }
             //if no content script was reachable, wait for one second and try again
-            return new Promise(resolve => setTimeout(() => resolve(), 1000)).then(() => this.sendMessage(message));
+            return new Promise(resolve => setTimeout(() => resolve(), 1000))
+            //DON'T FORGET TO INCREMENT ATTEMPTS!
+                .then(() => this.sendMessage(message, ++attempts));
         });
     }
 
@@ -220,33 +213,6 @@ const ExtensionManager = {
     },
 
     /**
-     * Creates a Wrapper for the given tabId
-     * and sets it as the wrapper for the extensionPage.
-     *
-     * Closes the tab of the previous extensionPage if it is in another tab.
-     *
-     * @param {number} tabId
-     * @return {Promise<any[] | void | never>}
-     */
-    setExtensionPage(tabId) {
-        let closing = Promise.resolve();
-
-        //if an extensionPage is already open, close it if it is another tab, only one 'instance' allowed
-        if (this.extensionPage && this.extensionPage.tabId !== tabId) {
-            //try to close tab, but catch error even if it fails
-            closing = browser.tabs.remove(this.extensionPage.tabId).catch(console.log);
-        }
-        return closing
-            .then(() => browser.tabs.get(tabId))
-            .then(value => {
-                let host = this.getHost(value);
-                //create a wrapper which injects the middlemen script to communicate with page scripts
-                this.extensionPage = this.createWrapper(host, value.url, tabId, true);
-                return this.extensionPage.init();
-            });
-    },
-
-    /**
      * Change the browserAction icon depending on the state parameter
      * or do nothing if the state is invalid.
      *
@@ -278,16 +244,12 @@ const ExtensionManager = {
 
 
     /**
-     * Removes the wrapper for this tabId from the tabs or the extensionPage
-     * if the id match.
+     * Removes the wrapper for this tabId from the tabs if the id match.
      *
      * @param {number} tabId
      */
     removeWrapper(tabId) {
-        //first try to remove the wrapper from the tabs, if this failed try to 'remove' the extensionWrapper
-        if (!this.tabs.delete(tabId) && this.extensionPage && this.extensionPage.tabId === tabId) {
-            this.extensionPage = undefined;
-        }
+        this.tabs.delete(tabId);
     },
 
     /**
@@ -387,7 +349,8 @@ const ExtensionManager = {
     },
 
 
-    processResult(result) {
+    processOverWatch(result) {
+        console.log("overWatch result: ", result);
         //todo implement result processor
     },
 
@@ -402,17 +365,19 @@ const ExtensionManager = {
         //react to url changes in tabs, create a new wrapper each time the url changes, even if it reloads
         browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
             let host = ExtensionManager.getHost(changeInfo.url);
-            console.log(tabId, changeInfo);
+
+            if (!changeInfo.favIconUrl) {
+                console.log(tabId, changeInfo);
+            }
 
             //check if url was updated
             if (!host) {
                 return
             }
 
-            //if page is the extensionPage, set it as it, this closes the previous other tab with
-            // this extensionPage if available
+            //don't listen to extensionPage
             if (this.isExtensionUrl(changeInfo.url)) {
-                this.setExtensionPage(tabId);
+                return;
             }
 
             //create a new wrapper for this page only if user is logged in
@@ -443,11 +408,6 @@ const ExtensionManager = {
                         //check if an wrapper with this tabId is available
                         let wrapper = this.getWrapper(value.id);
 
-                        //only extensionPages have a middlemen wrapper
-                        if (wrapper && wrapper.middlemen) {
-                            return;
-                        }
-
                         //check if that wrapper has the same url as the tab has now, else create a new wrapper
                         if (wrapper && value.url === wrapper.url) {
                             this.selected = wrapper;
@@ -460,7 +420,7 @@ const ExtensionManager = {
                                 this.displayState().catch(console.log);
                                 return
                             }
-                            //create a new page wrapper, that is not a middlemen
+                            //create a new page wrapper
                             this.selected = this.createWrapper(host, value.url, value.id);
                             //replace any previous wrapper for this tab
                             this.tabs.set(value.id, this.selected);
@@ -476,6 +436,8 @@ const ExtensionManager = {
 
         //reacts to messages from content scripts of pages or the browserAction
         browser.runtime.onMessage.addListener((msg, sender) => {
+            console.log(msg, sender);
+
             //state message come from browserAction popup
             if (msg.popup) {
                 try {
@@ -486,9 +448,9 @@ const ExtensionManager = {
             }
 
             //analyze message comes from analyzer.js
-            if (msg.analyzed) {
+            if (msg.overWatch) {
                 try {
-                    return this.processResult(msg.analyzed);
+                    this.processOverWatch(msg.overWatch);
                 } catch (e) {
                     console.log(e);
                 }
@@ -522,15 +484,6 @@ const ExtensionManager = {
                 port.onDisconnect.addListener(() => this.devPorts.delete(port));
             }
         });
-
-        //ignore all updates if extensionPage is not open, else sends it to the middle men (content script) of the SPA
-        UserSystem.onUpdate = update => ifLoggedIn(() => this.extensionPage && this.extensionPage.sendMessage({update}));
-
-        //ignore all data if extensionPage is not open, else sends it to the middle men (content script) of the SPA
-        UserSystem.onData = data => ifLoggedIn(() => this.extensionPage && this.extensionPage.sendMessage({data}));
-
-        //notify SPA of extension if open, that a server side logout occurred
-        UserSystem.onLogout = () => ifLoggedIn(() => this.extensionPage && this.extensionPage.sendMessage({logout: true}));
     },
 
     /**
@@ -563,33 +516,17 @@ const ExtensionManager = {
      * @param {string} host
      * @param {string} url
      * @param {number} tabId
-     * @param spa
      * @return {PageWrapper}
      */
-    createWrapper(host, url, tabId, spa) {
-        return new PageWrapper(host, url, tabId, spa);
+    createWrapper(host, url, tabId) {
+        return new PageWrapper(host, url, tabId);
     }
 };
-
-//fixme replaces some functions with stub functions to simulate certain behaviour
-// Stub.activate();
 
 //initiate all listener that are relevant for the extensionManager
 ExtensionManager.initListener();
 //ask initially for login status
-// UserSystem.loggedIn();
-
-//todo ask initially for login status and change symbol depending on the result
-browser.browserAction.onClicked.addListener(() => {
-    // browser.browserAction
-    //     .openPopup()
-    //     .catch(error => console.log("could not open popup: ", error))
-    //     .then(() => browser.browserAction.setPopup({popup: "../ui/popup.html"}))
-    //     .then(() => console.log("hi"))
-    //     .then(() => browser.browserAction.getPopup({}))
-    //     .then(r => console.log(r));
-});
-
+UserSystem.loggedIn();
 
 browser.browserAction
     .setPopup({popup: "../ui/popupProducer.html"})
@@ -614,8 +551,19 @@ function ifLoggedIn(cbTrue, cbFalse) {
     });
 }
 
+/**
+ * Function to add an listener for session changes for
+ * everything that has access to the background page.
+ * (especially popupProducer.js)
+ *
+ * @param {function} listener
+ */
 function addLoginListener(listener) {
     user.addListener("session", listener);
+}
+
+function returnMessage(promise) {
+
 }
 
 function validateString(value) {

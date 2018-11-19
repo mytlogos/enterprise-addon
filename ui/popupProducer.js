@@ -1,35 +1,50 @@
 //set height of popup after frame has loaded
 let frame = document.querySelector("iframe");
 
+let listener;
 
-let observer;
 frame.addEventListener("load", () => {
-    observer && observer.disconnect();
-    observer = new MutationObserver(() => console.log(frame.contentDocument.body.offsetHeight));
-
-    let config = {
-        attributes: true,
-        childList: true,
-        characterData: true,
-        subtree: true
-    };
-    observer.observe(frame.contentDocument.body, config);
+    listener && listener.dispose();
+    listener = new SizeListener(frame.contentWindow);
+    listener.listen(() => {
+        frame.style.height = frame.contentDocument.body.scrollHeight + "px";
+        frame.style.width = frame.contentDocument.body.scrollWidth + "px";
+    });
 });
 
 
-let loginListener = (oldValue, newValue) => {
-    frame.setAttribute("src", newValue ? "popup.html" : "loginPopup.html");
-};
-let value = false;
-// browser.extension.getBackgroundPage().addLoginListener(listener);
+let loginListener = (oldValue, newValue) => frame.setAttribute("src", newValue ? "loggedInPopup.html" : "loginPopup.html");
+browser.extension.getBackgroundPage().addLoginListener(loginListener);
 
-window.addEventListener("click", () => {
-    loginListener(value, !value);
-    value = !value;
-});
-/*
-setInterval(() => {
-    listener(value, !value);
-    value = !value;
-}, 2000);
-*/
+/**
+ *
+ * @param {Window} window
+ * @constructor
+ */
+function SizeListener(window) {
+    let callbacks = [];
+    let disposed = false;
+    let oldHeight = 0;
+    let oldWidth = 0;
+
+    (function observe() {
+        if (disposed) {
+            return;
+        }
+        let newHeight = window.document.body.scrollHeight;
+        let newWidth = window.document.body.scrollWidth;
+
+        if (newHeight !== oldHeight) {
+            callbacks.forEach(value => value());
+            oldHeight = newHeight;
+        } else if (newWidth !== oldWidth) {
+            callbacks.forEach(value => value());
+            oldWidth = newWidth;
+        }
+        requestAnimationFrame(observe);
+    })();
+
+    this.listen = callback => callbacks.push(callback);
+    this.dispose = () => (disposed = true) && (callbacks.length = 0);
+}
+

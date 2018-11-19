@@ -13,17 +13,17 @@
       "background.js"
     ]
   },
-  "content_scripts": [
-    {
-      "matches": [
-        "*://*/*"
-      ],
-      "js": [
-        "analyzer.js",
-        "otherTitle.js"
-      ]
-    }
-  ],
+//  "content_scripts": [
+//    {
+//      "matches": [
+//        "*://*/*"
+//      ],
+//      "js": [
+//        "analyzer.js",
+//        "otherTitle.js"
+//      ]
+//    }
+//  ],
   "browser_action": {
     "browser_style": true,
     "default_icon": {
