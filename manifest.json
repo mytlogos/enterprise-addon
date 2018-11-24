@@ -13,7 +13,7 @@
   ],
   "options_ui": {
     "page": "ui/settings.html"
-//    "browser_style": true
+    //    "browser_style": true
   },
   "background": {
     "scripts": [
@@ -35,20 +35,20 @@
       ],
       "js": [
         "external/browser-polyfill.js",
-        "experimental/initializer.js",
-        //        "content/analyzer.js",
-        "experimental/exAnalyzer.js",
-        //        "content/progressCheck.js",
-        "experimental/exProgressCheck.js",
-        //        "content/metaExtractor.js",
-        "experimental/exMetaExtractor.js",
-        //        "content/overWatch.js"
-        "experimental/exOverWatch.js"
+        "content/initializer.js",
+        "content/analyzer.js",
+        //        "experimental/exAnalyzer.js",
+        "content/progressCheck.js",
+        //        "experimental/exProgressCheck.js",
+        "content/metaExtractor.js",
+        //        "experimental/exMetaExtractor.js",
+        "content/overWatch.js"
+        //        "experimental/exOverWatch.js"
       ]
     }
   ],
   "browser_action": {
-//    "browser_style": true,
+    //    "browser_style": true,
     "default_icon": {
       "48": "img/ext_icon_inactive_48.png",
       "32": "img/ext_icon_inactive_32.png"

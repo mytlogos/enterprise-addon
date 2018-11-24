@@ -31,6 +31,7 @@ const ProgressChecker = (function () {
     //add an visibility listener to each descendant of body
     //remove listener if it was seen once
     const visibilityObserver = (el, trigger) => {
+
         if (el.nodeType !== Node.ELEMENT_NODE) {
             return
         }
@@ -53,8 +54,11 @@ const ProgressChecker = (function () {
             handler();
         }
     };
+
+    const seeAbleElements = ["video", " audio", " img", " a", " p", " span", " h1", " h2", " h3", " h4", " h5", " h6", " pre"];
+
     //add handler only if page is shown, (in firefox loading the extension injects this script
-    //in all open and loaded tabs, which overtaxes the cpu if there are too many tabs open
+    //in all open and loaded tabs, which could result in overtaxing the cpu if there are too many tabs open
     //so just check every 100ms if this document is currently active and then add handler
     //trigger handler once because the document may be fully loaded and a page can be small
     //enough that it does not need scrolling
@@ -62,16 +66,23 @@ const ProgressChecker = (function () {
         if (document.hidden) {
             setTimeout(() => initDoc(), 100);
         } else {
-            //add visibilityObserver to all current elements in the body
-            document.querySelectorAll("body *").forEach(element => visibilityObserver(element, true));
+            //add visibilityObserver only to current elements in the body which may have 'content'
+            document
+                .querySelectorAll(seeAbleElements.join(","))
+                .forEach(element => visibilityObserver(element, true));
         }
     })();
 
-    //add visibilityObserver to every new Element which is added to the body tree
+    //add visibilityObserver to every new content Element which is added to the body tree
     const domVisibleObserver = new MutationObserver(records =>
         records.forEach(record =>
             record.addedNodes.length
-            && record.addedNodes.forEach(newNode => newNode.nodeType === Node.ELEMENT_NODE && visibilityObserver(newNode))));
+            && record.addedNodes.forEach(newNode => {
+                newNode.nodeType === Node.ELEMENT_NODE
+                && seeAbleElements.includes(newNode.tagName.toLowerCase())
+                && visibilityObserver(newNode)
+            })
+        ));
 
     domVisibleObserver.observe(document.body, {
         childList: true,
@@ -90,86 +101,100 @@ attributeOldValue: true,
 attributeFilter: ["class"]
 });*/
 
-    const nodeGetter = start => {
-        let element = null;
-        let next = start ?
-            el => el ? el.nextElementSibling : document.body.firstElementChild :
-            el => el ? el.previousElementSibling : document.body.lastElementChild;
-
-        while (element = next(element)) {
-            let name = element.tagName.toLowerCase();
-
-            if (name !== "script" && name !== "style") {
-                break;
-            }
-        }
-        return element;
-    };
-
     /**
-     * Returns the first common parent element in the body html tree.
      *
-     * @param {HTMLElement} first
-     * @param {HTMLElement} second
+     * @param {Array} seeAbles
      */
-    function firstCommonParent(first, second) {
-        function parents(el) {
-            let parents = [];
+    function seenProgress(seeAbles) {
+        seeAbles = seeAbles
+            .map(value => {
+                let progress = trackProgress.get(value);
+                if (!progress) {
+                    trackProgress.set(value, progress = {progress: 0, total: 0, seen: 0})
+                }
+                return [value, progress];
+            })
+            .filter(value => value[1].progress < 1);
 
-            while ((el = el.parentElement) && el.tagName.toLowerCase() !== "html") {
-                parents.push(el);
-            }
-            return parents;
-        }
-
-        const firstParents = parents(first);
-        const secondParents = parents(second);
-
-        for (let parent of firstParents) {
-            //the first matching parent is the first common parent of first and second
-            if (secondParents.includes(parent)) {
-                return parent;
-            }
-        }
-
-        throw Error("elements are not of the same tree")
-    }
-
-    function seenProgress() {
         //need a definite start and end point to calculate progress
-        if (!start || !end) {
-            return 0;
+        if (!seeAbles.length) {
+            return;
         }
-        let parent = firstCommonParent(start, end);
-        const walker = document.createTreeWalker(parent, NodeFilter.SHOW_ELEMENT);
 
-        let startSeen = false;
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {
+            acceptNode: node =>
+                seeAbleElements.includes(node.tagName.toLowerCase()) ?
+                    NodeFilter.FILTER_ACCEPT :
+                    NodeFilter.FILTER_SKIP
+        });
+
+        //todo count the steps/elements between start and end?
 
         let element;
-        let seen = 0;
-        let total = 0;
-
         while (element = walker.nextNode()) {
-            if (element === start) {
-                startSeen = true;
-            }
 
-            if (!startSeen || !Analyzer.isVisible(element) || Analyzer.noContent(element)) {
+            //if element is not visible, skip it
+            if (!Analyzer.isVisible(element)) {
                 continue;
             }
+            let elementSeen = seenElements.get(element);
 
-            seenElements.get(element) && seen++;
-            total++;
+            seeAbles.forEach(value => {
+                let [seeAble, progressObj] = value;
 
-            if (element === end) {
-                break;
-            }
+                if (element === seeAble.start) {
+                    progressObj.startSeen = true;
+                }
+
+                if (!progressObj.startSeen || progressObj.endSeen) {
+                    return;
+                }
+
+                if (elementSeen) {
+                    progressObj.seen++;
+                }
+
+                progressObj.total++;
+
+                if (element === seeAble.end) {
+                    if (elementSeen) {
+                        progressObj.progress = 1;
+                        progressObj.progressed = true;
+                    } else {
+                        progressObj.endSeen = true;
+                    }
+                }
+            });
         }
-        //total should never be zero, at least one (in case start and end is the same)
-        return seen / total;
+        //calculate progress and reset properties for iteration
+        seeAbles.forEach(value => {
+            let progressObj = value[1];
+
+            if (progressObj.progress !== 1) {
+                //total should never be zero, at least one (in case start and end is the same)
+                let progress = progressObj.seen / progressObj.total;
+                progress = +progress.toFixed(3);
+
+                if (progress > 1) {
+                    throw Error("progress cannot be greater than 1");
+                }
+
+                if (progressObj.progress < progress) {
+                    progressObj.progress = progress;
+                    progressObj.progressed = true;
+                }
+            }
+
+            progressObj.startSeen = false;
+            progressObj.endSeen = false;
+            progressObj.seen = 0;
+            progressObj.total = 0;
+        })
     }
 
-    function mediaProgress(mediaElement) {
+    function mediaProgress(trackAble) {
+        let mediaElement = trackAble.start;
+
         if (mediaElement.ended) {
             return 1;
         }
@@ -185,43 +210,50 @@ attributeFilter: ["class"]
         if (!total) {
             return 0;
         }
-        return current / total;
-    }
+        let progressObj = trackProgress.get(trackAble);
 
-    /**
-     * In case neither video or audio is set:
-     * Calculates the percentage of seen elements between and including
-     * the start and end element.
-     * Returns zero if either of them is missing, else a number between zero and one.
-     *
-     * @return {number}
-     */
-    function progress() {
-        if (durationAble) {
-            if (start && end) {
-                //you shall watch your videos!
-                return seenProgress() === 1 ? mediaProgress(durationAble) : 0;
-            }
-            return mediaProgress(durationAble);
-        } else {
-            return seenProgress();
+        if (!progressObj) {
+            trackProgress.set(trackAble, progressObj = {progress: 0})
+        }
+
+        let progress = current / total;
+        progress = +progress.toFixed(3);
+
+        if (progressObj.progress < progress) {
+            progressObj.progress = progress;
+            progressObj.progressed = true;
         }
     }
 
     //todo set them as first child and last child of body or wait for input?
-    let start = nodeGetter(true);
-    let end = nodeGetter(false);
-    let durationAble;
+    let trackAbles = [];
+    let trackProgress = new Map();
 
     let progressCallback;
 
     setInterval(() => {
         try {
-            let currentProgress = progress();
-            currentProgress = +currentProgress.toFixed(3);
-            progressCallback && progressCallback(currentProgress);
+            let seeAbles = trackAbles.filter(value => value.seeAble);
+            let durationAbles = trackAbles.filter(value => value.durationAble);
+
+            seenProgress(seeAbles);
+            durationAbles.forEach(value => mediaProgress(value));
+
+            let progressed = trackAbles
+                .map(value => {
+                    return {trackAble: value, progress: trackProgress.get(value)}
+                })
+                .filter(value => value.progress && value.progress.progressed && (value.progress = value.progress.progress));
+
+            if (!progressed.length) {
+                return;
+            }
+            progressCallback && progressCallback(progressed);
+
+            //reset progressed flag
+            progressed.forEach(value => trackProgress.get(value.trackAble).progressed = false);
         } catch (e) {
-            console.log(e, start, end);
+            console.log(e);
         }
     }, 300);
 
@@ -239,37 +271,42 @@ attributeFilter: ["class"]
         },
 
         /**
-         * Sets the start point for the progress calculation.
-         *
-         * @param {HTMLElement} startElement
+         * @param {Result|Array<Result>} toTrack
          */
-        setStart(startElement) {
-            if (!startElement) {
-                throw Error("start element is invalid")
+        track(toTrack) {
+            if (Array.isArray(toTrack)) {
+                trackAbles.push(...toTrack);
+            } else {
+                trackAbles.push(toTrack);
             }
-            start = startElement;
+        },
+
+        unTrack(unTrack) {
+            if (Array.isArray(unTrack)) {
+                trackAbles = trackAbles.filter(value => {
+                    if (unTrack.includes(value)) {
+                        trackProgress.delete(value);
+                        return false;
+                    } else {
+                        return true;
+                    }
+                });
+            } else {
+                trackAbles = trackAbles.filter(value => {
+                    if (value === unTrack) {
+                        trackProgress.delete(value);
+                        return false;
+                    } else {
+                        return true;
+                    }
+                });
+            }
         },
 
         /**
-         * Sets the end point for the progress calculation.
          *
-         * @param {HTMLElement} endElement
+         * @param {progressCall} callback
          */
-        setEnd(endElement) {
-            if (!endElement) {
-                throw Error("start element is invalid")
-            }
-            end = endElement;
-        },
-
-        setDurationAble(element) {
-            if ("currentTime" in element && "ended" in element && "duration" in element) {
-                durationAble = element;
-            } else {
-                throw Error(`${element.tagName} is not a valid durationAble element`);
-            }
-        },
-
         set onProgress(callback) {
             if (callback && typeof callback === "function") {
                 progressCallback = callback;
@@ -279,3 +316,8 @@ attributeFilter: ["class"]
         }
     }
 })();
+
+/**
+ * @typedef {callback} progressCall
+ * @param {Array<{trackAble: Result, progress: number}>} progressed
+ */

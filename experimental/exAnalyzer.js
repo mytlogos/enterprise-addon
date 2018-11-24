@@ -26,7 +26,6 @@ const ExAnalyzer = {
 
         let main;
         try {
-            // this.normalize(document.body);
             //run the scoring algorithm
             let candidates = this.initialize(document);
 
@@ -370,25 +369,6 @@ const ExAnalyzer = {
         }
 
         throw Error("element and maxParent are not of the same tree");
-    },
-
-    /**
-     * Trims all whitespace in any TextNode.
-     * Removes TextNodes with whitespace (including /r/n) only.
-     * Combines adjacent TextNodes.
-     *
-     * @param {Element} element
-     */
-    normalize(element) {
-        //fixme: metaExtractor throws error if this does not run??
-        //trim every textNode
-        //this empties all nodes that contain whitespace chars only
-        this.forEachNode(
-            this.createTextWalker(element),
-            node => node.data = node.data.trim()
-        );
-        //remove empty textNodes
-        element.normalize();
     },
 
     /**

@@ -37,6 +37,15 @@ const MetaExtractor = (function () {
      */
 
     /**
+     * @typedef {Object} MetaResult
+     * @property {string} novel
+     * @property {string} volume
+     * @property {string} volIndex
+     * @property {string} chapter
+     * @property {string} chapIndex
+     */
+
+    /**
      *
      * @param node
      * @param text
@@ -51,73 +60,77 @@ const MetaExtractor = (function () {
             return on;
         }
 
+        function getMask(mask) {
+            return types & mask;
+        }
+
         // noinspection JSValidateTypes
         return {
             node,
             text,
 
             get hasAny() {
-                return this.types;
+                return types;
             },
 
             get hasRegs() {
-                return this.types & REGS;
+                return getMask(REGS);
             },
 
             set hasRegs(on) {
                 return setMask(on, REGS);
             },
             get hasHeading() {
-                return this.types & HEADING;
+                return getMask(HEADING);
             },
 
             set hasHeading(on) {
                 return setMask(on, HEADING);
             },
             get hasBreadcrumb() {
-                return this.types & BREADCRUMB;
+                return getMask(BREADCRUMB);
             },
 
             set hasBreadcrumb(on) {
                 return setMask(on, BREADCRUMB);
             },
             get hasLink() {
-                return this.types & LINK;
+                return getMask(LINK);
             },
 
             set hasLink(on) {
                 return setMask(on, LINK);
             },
             get hasHRule() {
-                return this.types & HRULE;
+                return getMask(HRULE);
             },
 
             set hasHRule(on) {
                 return setMask(on, HRULE);
             },
             get hasPath() {
-                return this.types & PATH;
+                return getMask(PATH);
             },
 
             set hasPath(on) {
                 return setMask(on, PATH);
             },
             get hasTitle() {
-                return this.types & TITLE;
+                return getMask(TITLE);
             },
 
             set hasTitle(on) {
                 return setMask(on, TITLE);
             },
             get hasNovelAbbr() {
-                return this.types & NOVELABBR;
+                return getMask(NOVELABBR);
             },
 
             set hasNovelAbbr(on) {
                 return setMask(on, NOVELABBR);
             },
             get hasAbbr() {
-                return this.types & ABBR;
+                return getMask(ABBR);
             },
 
             set hasAbbr(on) {
@@ -149,12 +162,11 @@ const MetaExtractor = (function () {
      *
      * @param {HTMLElement|Array<HTMLElement>|MetaElement|Array<MetaElement>} commonParent
      * @param {boolean} multiple
-     * @return {*|void}
+     * @return {MetaResult|Map<MetaElement, MetaResult>}
      */
     function findMeta(commonParent, multiple) {
 
         let lineNodesList = lineNodes();
-
         //map lines to viable candidates
         let candidates = lineNodesList.map((value, index, array) => {
             let [line, node] = value;
@@ -180,8 +192,9 @@ const MetaExtractor = (function () {
         }).filter(value => value.hasAny);
 
         candidates = filterIrrelevant(candidates);
-
         scoreCandidates(candidates);
+        //we need at least candidates with a score greater than zero
+        candidates = candidates.filter(value => value.score > 0);
 
         if (!multiple) {
             return meta(candidates);
@@ -191,7 +204,11 @@ const MetaExtractor = (function () {
         let resultMap = new Map();
 
         wedgedCandidates.forEach((value, key) => {
+            if (!key) {
+                return;
+            }
             let metaResult = meta(value);
+            metaRest(candidates, metaResult);
             resultMap.set(key, metaResult);
         });
         return resultMap;
@@ -509,11 +526,7 @@ const MetaExtractor = (function () {
         let result = new Map();
 
         candidates.forEach(value => {
-            let wedge = wedges.find(element => {
-                let notBelow1 = notBelow(value, element, threshold);
-                console.log(value, "is not below", element, ":", notBelow1);
-                return notBelow1;
-            });
+            let wedge = wedges.find(element => notBelow(value, element, threshold));
 
             let items = result.get(wedge);
 
@@ -530,9 +543,137 @@ const MetaExtractor = (function () {
     /**
      *
      * @param {Array<Candidate>} candidates
+     * @param {MetaResult} meta
+     */
+    function metaRest(candidates, meta) {
+        if (!meta.chapter || (!meta.chapIndex && !meta.volIndex && !meta.volume && !meta.novel)) {
+            return;
+        }
+        let scoredCandidates = [...candidates].sort((a, b) => b.score - a.score);
+
+        //if there is a chapter candidate
+        //which has text before chapter match
+        //and includes the available chapter text
+        //has most likely the novel or volume title
+        let chapters = scoredCandidates.filter(value => value.chapter && value.chapter.index && value.text.includes(meta.chapter));
+
+        let chapter = chapters[0];
+
+        let volumes = scoredCandidates.filter(value => value.volume);
+
+        if (chapter) {
+            //if the chapter match is not at the beginning, sth else (novel title likely) is preceding it
+            let chapStart = chapter.chapter.index;
+
+            if (chapStart) {
+                let novel = chapter.text.substring(0, chapStart).trim();
+
+                if (chapter.volume) {
+                    let volStart = chapter.volume.index;
+                    meta.volume = chapter.text.substring(volStart, chapStart);
+
+                    let volIndex = meta.volume.match(/\d+/);
+                    meta.volIndex = volIndex && volIndex[0];
+
+                    if (volStart) {
+                        novel = chapter.text.substring(0, volStart).trim();
+                    } else {
+                        novel = "";
+                    }
+                }
+                meta.novel = novel;
+            }
+        }
+
+
+        let volume;
+
+        if (!meta.volume) {
+            volumes = meta.chapter && chapter ? filterNotBelow(volumes, chapter.node) : volumes;
+            volume = volumes[0];
+
+            if (volume && !volume.chapter) {
+                let volStart = volume.volume.index;
+                meta.volume = volume.text.substring(volStart);
+
+                let volIndex = meta.volume.match(/\d+([,.]\d+)?/);
+                meta.volIndex = volIndex && volIndex[0];
+
+                if (volStart) {
+                    meta.novel = chapter.text.substring(0, volStart).trim();
+                }
+            }
+        }
+
+        if (!meta.novel) {
+            let novelCandidates;
+            let above;
+
+            novelCandidates = (
+                (above = (chapter || volume)) ? filterNotBelow(candidates, above.node) : candidates
+            ).reverse();
+
+            let novelCandidate;
+            const {abbr} = titleAbbrRegex();
+
+            for (let candidate of novelCandidates) {
+                if (abbr) {
+                    if (candidate.novelAbbr) {
+                        novelCandidate = candidate;
+                        break;
+                    }
+                } else {
+                    const otherMatch = candidate.volume || candidate.chapter;
+
+                    if (otherMatch) {
+                        if (otherMatch.index) {
+                            novelCandidate = candidate;
+                            break;
+                        }
+                    } else {
+                        if (candidate.pathScore >= 1.5 || candidate.titleScore >= 1.5) {
+                            if (meta.chapter && candidate.text.includes(candidate.text)) {
+                                continue;
+                            }
+                            novelCandidate = candidate;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (novelCandidate) {
+                const splitMatch = novelCandidate.volume || novelCandidate.chapter;
+
+                meta.novel = splitMatch ?
+                    novelCandidate.text.substring(0, splitMatch.index) :
+                    novelCandidate.text;
+            } else if (abbr) {
+                meta.novel = abbr[0];
+            }
+        }
+
+        function trimSeparators(s) {
+            return s.trim().replace(/(^[|\-–\\\/>»])|([|\-–\\\/>»]$)/g, "").trim();
+        }
+
+        if (meta.novel) {
+            meta.novel = trimSeparators(meta.novel);
+        }
+        if (meta.volume) {
+            meta.volume = trimSeparators(meta.volume);
+        }
+        if (meta.chapter) {
+            meta.chapter = trimSeparators(meta.chapter);
+        }
+        return meta;
+    }
+
+    /**
+     *
+     * @param {Array<Candidate>} candidates
+     * @return {MetaResult}
      */
     function meta(candidates) {
-        candidates = candidates.filter(value => value.score);
         let scoredCandidates = [...candidates].sort((a, b) => b.score - a.score);
 
         let chapters = scoredCandidates.filter(value => value.chapter);
@@ -816,173 +957,121 @@ const MetaExtractor = (function () {
     }
 
     function lineNodes() {
+        //fixme: according to chrome performance profiler: 400ms for a page with 8 long to medium chapter
         const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
             acceptNode: node => {
                 let tag = node.parentElement.tagName.toLowerCase();
-                return tag !== "script" && tag !== "style" && tag !== "noscript" ?
-                    NodeFilter.FILTER_ACCEPT :
-                    NodeFilter.FILTER_REJECT;
+                if (tag === "script"
+                    || tag === "style"
+                    || tag === "noscript"
+                    || tag === "svg") {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                if (node.data.trim()) {
+                    if (node.trimmed == null) {
+                        node.trimmed = trimSpace(node.data, true);
+                    }
+                    return NodeFilter.FILTER_ACCEPT;
+                }
+                return NodeFilter.FILTER_REJECT;
             }
         });
 
+        let textNode;
+
         const lines = document.body.innerText
             .split("\n")
-            .map(s => s.trim())
+            .map(s => trimSpace(s))
             .filter(s => s);
 
-        (function normalizeLines() {
-            let textNode;
-            let splitter = /\s/;
-            let content = /\w/;
+        const splitter = /\s/;
 
-            while (textNode = walker.nextNode()) {
-                let textTransform = window.getComputedStyle(textNode.parentElement).textTransform;
-                let text;
+        while (textNode = walker.nextNode()) {
+            let textTransform = window.getComputedStyle(textNode.parentElement).textTransform;
+            let text;
 
-                if (!content.test(textNode.data)) {
-                    continue;
-                }
+            //do the transformation on nodeData
+            if (textTransform === "uppercase") {
+                text = textNode.data.toUpperCase();
 
-                if (textTransform === "uppercase") {
-                    text = textNode.data.toUpperCase();
+            } else if (textTransform === "lowercase") {
+                text = textNode.data.toLowerCase();
 
-                } else if (textTransform === "lowercase") {
-                    text = textNode.data.toLowerCase();
+            } else if (textTransform === "capitalize") {
+                text = textNode.data.split(splitter).map(s => s[0].toUpperCase() + s.substring(1)).join(" ");
+            }
 
-                } else if (textTransform === "capitalize") {
-                    text = textNode.data.split(splitter).map(s => s[0].toUpperCase() + s.substring(1)).join(" ");
-                }
+            if (text) {
+                for (let i = 0; i < lines.length; i++) {
+                    let line = lines[i];
 
-                if (text) {
-                    for (let i = 0; i < lines.length; i++) {
-                        let line = lines[i];
-
-                        if (line === text) {
-                            lines[i] = textNode.data;
-                        }
+                    //if transformed text is same as line,
+                    //replace transformed line with untransformed text
+                    if (line === text) {
+                        lines[i] = textNode.trimmed;
+                    } else {
+                        lines[i] = trimSpace(lines[i]);
                     }
                 }
             }
-        })();
+        }
+        const lineNodes = [];
+        //reset walker
+        walker.currentNode = walker.root;
 
-        function findNode(line) {
+        //search for nodes which have the text as content
+        for (let index = 0; index < lines.length; index++) {
+            let line = lines[index];
             let node;
 
+            let current = walker.currentNode;
+
             while (node = walker.nextNode()) {
-                if (node.data.includes(line)) {
+                //if
+                let trimmedData = node.trimmed;
+                if (!trimmedData) {
+                    continue;
+                }
+
+                if (trimmedData.includes(line)) {
+                    //if a node was found, break walker loop
                     break;
-                } else if (line.includes(node.data)) {
+                } else if (line.includes(trimmedData)) {
                     let found;
                     while ((node = node.parentElement) && node.tagName !== "BODY") {
-                        if (node.innerText.includes(line)) {
+                        let trimmed = trimSpace(node.innerText);
+
+                        //if innerText returns nothing, because text is hidden,
+                        //break this loop
+                        if (!trimmed) {
+                            break;
+                        }
+
+                        if (trimmed.includes(line)) {
                             found = true;
                             break;
                         }
+                        // console.log(`'${line}' not included in '${trimmed}'`);
                     }
+                    //if a node was found, break walker loop
                     if (found) {
                         break;
                     }
                 }
             }
-            return node;
-        }
-
-        const lineNodes = [];
-        walker.currentNode = document.body;
-
-        for (let index = 0; index < lines.length; index++) {
-            let line = lines[index];
-            let node = findNode(line);
 
             if (node) {
+                //if a node was found, push it
                 lineNodes.push([line, node, index]);
             } else {
+                //if no valid node for that line was found, remove it
+                //and reset walker to before the node search
                 lines.splice(index, 1);
                 index--;
+                walker.currentNode = current;
             }
         }
-
         return lineNodes;
-    }
-
-    function isAbove(above, main) {
-        if (above === main) {
-            return false;
-        }
-
-        if (!main) {
-            return;
-        }
-
-        let abovePosition = above.nodePosition;
-        let mainPosition = main.nodePosition;
-
-        for (let i = 0; i < abovePosition.length; i++) {
-            let aboveParentPos = abovePosition[i];
-            let mainParentPos = mainPosition[i];
-
-            if (aboveParentPos !== mainParentPos) {
-                if (aboveParentPos === undefined || mainParentPos === undefined) {
-                    return false;
-                }
-                return aboveParentPos < mainParentPos;
-            }
-        }
-    }
-
-    /**
-     * Checks whether the first argument is below the
-     * second argument in the dom tree.
-     *
-     * @param {MetaNode} below
-     * @param {MetaNode} main
-     * @return {boolean}
-     */
-    function isBelow(below, main) {
-        if (below === main) {
-            return false;
-        }
-        let belowPosition = below.nodePosition;
-        let mainPosition = main.nodePosition;
-
-        for (let i = 0; i < belowPosition.length; i++) {
-            let belowParentPos = belowPosition[i];
-            let mainParentPos = mainPosition[i];
-
-            if (belowParentPos !== mainParentPos) {
-                if (belowParentPos === undefined || mainParentPos === undefined) {
-                    return false;
-                }
-                return belowParentPos > mainParentPos;
-            }
-        }
-    }
-
-    function isAncestor(node, ancestor) {
-        const nodePositions = node.nodePosition;
-        return ancestor.nodePosition.every((value, index) => nodePositions[index] === value);
-    }
-
-    function closestCommonAncestor(first, second) {
-        if (first === second) {
-            return first.parentNode;
-        }
-
-        let position = [];
-        const max = Math.max(first.elementPosition.length, second.elementPosition.length);
-
-        for (let i = 0; i < max; i++) {
-            let firstPosition = first.elementPosition[i];
-            let secondPosition = second.elementPosition[i];
-
-            if (firstPosition !== secondPosition) {
-                break
-            }
-            position.push(firstPosition);
-        }
-
-        return getNode(position, Node.ELEMENT_NODE);
-
     }
 
     function* parents(node) {
@@ -997,52 +1086,6 @@ const MetaExtractor = (function () {
         }
     }
 
-    function getNode(position, type) {
-        const childrenGetter = type === Node.ELEMENT_NODE
-            ? node => node.children
-            : node => node.childNodes;
-
-        let node = document.body;
-
-        for (let pos of position) {
-            let children = childrenGetter(node);
-            node = children[pos];
-        }
-        return node;
-    }
-
-    /**
-     * Annotates each node with their current positions
-     * in the node- & element hierarchy.
-     */
-    function annotateDOM() {
-        let walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
-        let node;
-
-        while (node = walker.nextNode()) {
-            node.nodePosition = [];
-            let parent = node.parentElement;
-
-            if (parent.nodePosition) {
-                node.nodePosition.push(...parent.nodePosition);
-            }
-
-            let nodeIndex = Array.from(parent.childNodes).indexOf(node);
-            node.nodePosition.push(nodeIndex);
-
-
-            if (node.nodeType === Node.ELEMENT_NODE) {
-                node.elementPosition = [];
-
-                if (parent.elementPosition) {
-                    node.elementPosition.push(...parent.elementPosition);
-                }
-                let elementIndex = Array.from(parent.children).indexOf(node);
-                node.elementPosition.push(elementIndex);
-            }
-        }
-    }
-
     function regExpEscape(literal_string) {
         return literal_string.replace(/[-[\]{}()*+!<=:?.\/\\^$|#\s,]/g, '\\$&');
     }
@@ -1050,30 +1093,58 @@ const MetaExtractor = (function () {
     //FIXME: @kissanime: does not find nodes corresponding to the lines
     //fixme: @mangadex: does not find correct title from select
     return {
+
         /**
          *
-         * @param {undefined|AnalyzeResult|Array<AnalyzeResult>} result
-         * @return {void|*}
+         * @param {AnalyzeResult|Array<AnalyzeResult>} analyzeResult
+         * @return {MetaResult|Array<Result>|void}
          */
-        extractMeta(result) {
-            if (!result) {
+        extractMeta(analyzeResult) {
+            if (!analyzeResult) {
                 return;
             }
-            annotateDOM();
-            //todo enable title search for multiple contents!!
+
             let ancestor;
             let multiple;
 
-            if (multiple = Array.isArray(result)) {
-                ancestor = result.map(value => closestCommonAncestor(value.start, value.end));
+            if (multiple = Array.isArray(analyzeResult)) {
+                ancestor = analyzeResult.map(value => value.ancestor = closestCommonAncestor(value.start, value.end));
+
+                //sort ancestors after they hierarchy,
+                //earliest elements at the beginning, later elements at the end
+                ancestor.sort((a, b) => {
+                    if (isAbove(a, b) || isAncestor(b, a)) {
+                        return -1;
+                    } else if (isAbove(b, a) || isAncestor(a, b)) {
+                        return 1;
+                    } else if (a === b) {
+                        return 0;
+                    }
+                });
             } else {
-                ancestor = closestCommonAncestor(result.start, result.end);
+                ancestor = closestCommonAncestor(analyzeResult.start, analyzeResult.end);
             }
-            return findMeta(ancestor, multiple);
+            let metaResult = findMeta(ancestor, multiple);
+
+            //todo this could lead to error/problems if multiple analyzeResults have the same common Ancestor
+            //map results to analyzeResults over ancestors
+            if (multiple) {
+                metaResult = analyzeResult.map(value => {
+                    let mResult = metaResult.get(value.ancestor);
+
+                    if (!mResult) {
+                        mResult = {};
+                    }
+
+                    return Object.assign(mResult, value);
+                });
+            }
+            return metaResult;
         },
 
 
         extractName(s) {
+            //todo is this even necessary?
             //todo implement extraction
             return s;
         },
@@ -1090,3 +1161,17 @@ const MetaExtractor = (function () {
     };
 
 })();
+
+/**
+ * @typedef {Object} Result
+ * @property {HTMLElement} start
+ * @property {HTMLElement} end
+ * @property {string} type
+ * @property {boolean} seeAble
+ * @property {boolean} durationAble
+ * @property {string} novel
+ * @property {string} volume
+ * @property {string} volIndex
+ * @property {string} chapter
+ * @property {string} chapIndex
+ */

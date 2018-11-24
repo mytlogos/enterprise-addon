@@ -26,7 +26,6 @@ const Analyzer = {
 
         let main;
         try {
-            this.normalize(document.body);
             //run the scoring algorithm
             let candidates = this.initialize(document);
 
@@ -118,7 +117,7 @@ const Analyzer = {
         content.contentCharCount = this._getCharCount(innerText);
         content.lengthBonus = Math.min(Math.floor(innerText.length / 100), 3);
 
-        if (!this.isScoreAble(element)) {
+        if (!content.scoreAble) {
             if (this.SCORE.textContentTags.includes(content.tag)) {
                 content.tagBonus = 2;
                 content.contentTags = true;
@@ -173,10 +172,10 @@ const Analyzer = {
         let enterprise = element.enterprise;
 
         if (!element || !enterprise) {
-            return
+            return;
         }
 
-        if (this.isScoreAble(element)) {
+        if (enterprise.scoreAble) {
             //add element as candidate
             candidates.add(element);
         } else if (this.SCORE.scoreParentTag.includes(enterprise.tag)) {
@@ -259,56 +258,6 @@ const Analyzer = {
             }
         );
         return candidates;
-    },
-
-    /**
-     *
-     * @param args
-     * @return {Map<any, any>}
-     */
-    queryText(...args) {
-        if (!args.length) {
-            return new Map();
-        }
-        const regs = args.map(value => {
-                if (value instanceof RegExp) {
-                    return value;
-                }
-                if (value instanceof String || typeof value === "string") {
-                    return new RegExp(value);
-                }
-                throw Error("invalid argument");
-            }
-        );
-
-
-        const testResult = new Map(regs.map(value => [value, []]));
-
-        this.forEachNode(
-            this.createTextWalker(),
-            node => {
-                for (let reg of regs) {
-                    if (reg.test(node.data)) {
-                        testResult.get(reg).push(node);
-                    }
-                }
-            }
-        );
-
-        const result = new Map();
-
-        testResult.forEach((valueNodes, key) => {
-                for (let text of valueNodes) {
-                    let val = result.get(text);
-                    if (!val) {
-                        val = [];
-                        result.set(text, val);
-                    }
-                    val.push(key);
-                }
-            }
-        );
-        return result;
     },
 
     /**
@@ -430,41 +379,6 @@ const Analyzer = {
     },
 
     /**
-     * Checks whether possibleAncestor is an ancestor
-     * of element.
-     *
-     * @param {HTMLElement} element
-     * @param {HTMLElement} possibleAncestor
-     * @return {boolean}
-     */
-    isAncestor(element, possibleAncestor) {
-        while (element = element.parentElement) {
-            if (element === possibleAncestor) {
-                return true;
-            }
-        }
-        return false;
-    },
-
-    /**
-     * Trims all whitespace in any TextNode.
-     * Removes TextNodes with whitespace (including /r/n) only.
-     * Combines adjacent TextNodes.
-     *
-     * @param {Element} element
-     */
-    normalize(element) {
-        //trim every textNode
-        //this empties all nodes that contain whitespace chars only
-        this.forEachNode(
-            this.createTextWalker(element),
-            node => node.data = node.data.trim()
-        );
-        //remove empty textNodes
-        element.normalize();
-    },
-
-    /**
      * Checks if the node is a text node.
      *
      * @param {Node} node
@@ -563,37 +477,12 @@ const Analyzer = {
         if (element.hidden) {
             return false;
         }
-
-        // (!element.offsetHeight || !element.offsetWidth) &&
-        if ((!element.scrollHeight || !element.scrollWidth)) {
+        if (!element.scrollHeight || !element.scrollWidth) {
             return false;
         }
-
-        //get computed style for window
-        let style = window.getComputedStyle(element);
-
-        //what use is it if you have something but can't 'see' it
-        if (parseFloat(style.opacity) === 0) {
-            return false;
-        }
-
-        /*//if e.g. style.left is "auto" parse return NaN, so just set it to 0
-        let left = parseFloat(style.left) || 0;
-        let top = parseFloat(style.top) || 0;
-
-        let position = style.position;
-*/
-        return true;
+        let opacity = window.getComputedStyle(element).opacity;
         //fixme for now i am gonna just ignore the out of window position thing
-        /*//left or top properties are not applicable
-        // if position is neither absolute, fixed or relative, so return true if not applicable,
-        //else check left and top
-        && (position !== "absolute" && position !== "fixed" && position !== "relative")
-        //if left is less than zero, check if the the width
-        //is big enough so that at least a part is still shown
-        || (left >= 0 || (left < 0 && (left + width) > 0))
-        //top offset needs to be zero or more to show content
-        && top >= 0;*/
+        return parseFloat(opacity) !== 0;
     },
 
 
@@ -625,11 +514,11 @@ const Analyzer = {
         ],
         scoreParentTag: ["li", "dl", "dt", "dd", "tr", "td", "thead", "tbody", "th"],
         mediaTags: ["video", "audio", "img"],
-        textContentTags: ["p", "span", "h1", "h2", "h3", "h4", "h5", "h6"],
+        textContentTags: ["p", "span", "h1", "h2", "h3", "h4", "h5", "h6", "pre"],
         formatTags: [
             "abbr", "address", "b", "bdi", "bdo", "big", "blockquote", "center",
             "cite", "code", "del", "dfn", "em", "font", "i", "ins", "kbd",
-            "mark", "meter", "pre", "progress", "q", "rp", "rt", "ruby",
+            "mark", "meter", "progress", "q", "rp", "rt", "ruby",
             "s", "samp", "small", "strike", "strong", "sub", "sup", "template", "time",
             "tt", "u", "var", "wbr"
         ],
@@ -800,7 +689,7 @@ const ContentSelector = {
                 let item = array[i];
 
                 //if item is ancestor of value
-                if (Analyzer.isAncestor(value, item) &&
+                if (isAncestor(value, item) &&
                     enterprise.audioLength < item.enterprise.audioLength &&
                     enterprise.videoLength < item.enterprise.videoLength &&
                     enterprise.imageLength < item.enterprise.imageLength) {
@@ -870,7 +759,7 @@ const ContentSelector = {
             const positiveContent = Analyzer._getCharCount(positiveText);
 
             element.enterprise.positiveChars = positiveContent;
-            return positiveContent > 50;
+            return positiveContent >= 50;
         });
 
         //prepare a list of candidates to remove
@@ -879,7 +768,7 @@ const ContentSelector = {
 
             for (let candidate of candidates) {
                 //continue if candidate is no child of value
-                if (value === candidate || !Analyzer.isAncestor(candidate, value)) {
+                if (value === candidate || !isAncestor(candidate, value)) {
                     continue;
                 }
 
@@ -956,9 +845,9 @@ const ContentSelector = {
             if (aImg > bImg) {
                 return a;
             } else if (aImg === bImg) {
-                if (Analyzer.isAncestor(a, b)) {
+                if (isAncestor(a, b)) {
                     return a;
-                } else if (Analyzer.isAncestor(b, a)) {
+                } else if (isAncestor(b, a)) {
                     return b;
                 } else {
                     return a.enterprise.contentScore >= b.enterprise.contentScore ? a : b;

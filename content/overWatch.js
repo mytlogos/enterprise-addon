@@ -121,36 +121,76 @@ const OverWatch = (function () {
         }
     });
 
-    const name = addInfo("Name", txt => MetaExtractor.extractName(txt));
-    const volume = addInfo("Volume", txt => MetaExtractor.extractVolume(txt));
-    const chapter = addInfo("Episode", txt => MetaExtractor.extractEpisode(txt));
+    const name = addInfo("Name", txt => ExMetaExtractor.extractName(txt));
+    const volume = addInfo("Volume", txt => ExMetaExtractor.extractVolume(txt));
+    const chapter = addInfo("Episode", txt => ExMetaExtractor.extractEpisode(txt));
+    let result;
+
+
+    /**
+     * Removes properties which may not be
+     * messageAble through the browser.runtime.sendMessage
+     * API.
+     *
+     * @param {Result|Array<Result>} result
+     * @return {Result|Array<Result>}
+     */
+    function packageResult(result) {
+        if (Array.isArray(result)) {
+            return result.map(value => packageResult(value));
+        }
+        let copy = Object.assign({}, result);
+
+        //remove properties with node interface
+        delete copy.start;
+        delete copy.end;
+        delete copy.ancestor;
+
+        return copy;
+    }
+
+    /**
+     *
+     * @param {Array<{trackAble: Result, progress: number}>} progressed
+     */
+    ExProgressChecker.onProgress = progressed => {
+        let progress = progressed.map(value => {
+            let {trackAble, progress} = value;
+
+            //remove properties with node interface
+            let trackAbleCopy = packageResult(trackAble);
+
+            trackAbleCopy.progress = progress;
+            console.log(trackAbleCopy);
+            return trackAbleCopy;
+        });
+
+        sendMessage({overWatch: {progress}}).catch(error => console.log(error));
+    };
 
     return {
         start() {
-            const result = Analyzer.analyze();
+            console.log("hello");
+            const analyzeResult = ExAnalyzer.analyze();
+            // console.log(analyzeResult);
 
-            if (!result) {
+            if (!analyzeResult) {
                 return;
             }
 
-            let meta = MetaExtractor.extractMeta(result);
+            let metaResults = MetaExtractor.extractMeta(result);
 
-            if (!meta) {
+            if (!metaResults) {
                 return;
             }
 
-            if (result.seeAble) {
-                ProgressChecker.setStart(result.start);
-                ProgressChecker.setEnd(result.end);
-            }
+            ProgressChecker.track(metaResults);
+            result = packageResult(metaResults);
 
-            if (result.durationAble) {
-                ProgressChecker.setDurationAble(result.start)
-            }
-
-            name.set(meta.novel);
-            volume.set(meta.volume);
-            chapter.set(meta.chapter);
+            //todo display multiple results in a scrollable list
+            name.set(metaResults.novel);
+            volume.set(metaResults.volume);
+            chapter.set(metaResults.chapter);
 
             showPopup();
         }
