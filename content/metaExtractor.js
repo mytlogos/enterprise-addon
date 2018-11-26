@@ -759,7 +759,7 @@ const MetaExtractor = (function () {
                         }
                     } else {
                         if (candidate.pathScore >= 1.5 || candidate.titleScore >= 1.5) {
-                            if (result.chapter && candidate.text.includes(candidate.text)) {
+                            if (result.chapter && result.chapter.includes(candidate.text)) {
                                 continue;
                             }
                             novelCandidate = candidate;
@@ -934,10 +934,10 @@ const MetaExtractor = (function () {
         let result = [];
 
         for (let item of array) {
-            if (notBelow(item, element, threshold)) {
-                break;
-            } else {
+            if (item.node != element && notBelow(item, element, threshold)) {
                 result.push(item);
+            } else {
+                break;
             }
         }
         return result;
@@ -998,7 +998,7 @@ const MetaExtractor = (function () {
                 text = textNode.data.toLowerCase();
 
             } else if (textTransform === "capitalize") {
-                text = textNode.data.split(splitter).map(s => s[0].toUpperCase() + s.substring(1)).join(" ");
+                text = textNode.data.split(splitter).map(s => s && s[0].toUpperCase() + s.substring(1)).join(" ");
             }
 
             if (text) {

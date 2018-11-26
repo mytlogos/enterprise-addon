@@ -998,7 +998,7 @@ const ExMetaExtractor = (function () {
                 text = textNode.data.toLowerCase();
 
             } else if (textTransform === "capitalize") {
-                text = textNode.data.split(splitter).map(s => s[0].toUpperCase() + s.substring(1)).join(" ");
+                text = textNode.data.split(splitter).map(s => s && s[0].toUpperCase() + s.substring(1)).join(" ");
             }
 
             if (text) {

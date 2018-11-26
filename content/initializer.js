@@ -4,12 +4,20 @@ window.browser = (function () {
         window.chrome;
 })();
 
+//fixme: remove this flag and everything else depending on this variable, if not needed
 /**
- * @typedef {Object} Init
- * @property {function} acceptNode
- * @property {function} consumer
- * @property {number} filter
+ *
+ * @type {boolean}
  */
+const extensionActive = false;
+
+function listenMessage(listener) {
+    if (extensionActive) {
+        browser.runtime.onMessage.addListener(listener);
+    } else {
+        listener({start: true});
+    }
+}
 
 /**
  *
@@ -26,16 +34,13 @@ function sendMessage(message, dev) {
         };
     }
 
-    // if ("browser" in window) {
-    //     return browser.runtime.sendMessage(message);
-    // } else {
-    console.log("message for background: ", message);
-    return Promise.resolve();
-    // }
+    if (extensionActive) {
+        return browser.runtime.sendMessage(message);
+    } else {
+        console.log("message for background: ", message);
+        return Promise.resolve();
+    }
 }
-
-//fixme: only firefox supports response with promises in sendMessage, chrome needs a separate handler
-//fixme: only firefox supports response with promises in onMessage, other need to use response functino
 
 //fixme: if dom ever changes, this is not valid anymore
 /**
@@ -43,31 +48,36 @@ function sendMessage(message, dev) {
  * in the node- & element hierarchy.
  */
 (function annotateDOM() {
-    let walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
-    let node;
+    function annotate() {
+        let walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+        let node;
 
-    while (node = walker.nextNode()) {
-        let parent = node.parentElement;
+        while (node = walker.nextNode()) {
+            let parent = node.parentElement;
 
-        if (parent.nodePosition) {
-            node.nodePosition = parent.nodePosition.slice(0);
-        } else {
-            node.nodePosition = [];
-        }
-
-        let nodeIndex = Array.prototype.indexOf.call(parent.childNodes, node);
-        node.nodePosition.push(nodeIndex);
-
-        if (node.nodeType === node.ELEMENT_NODE) {
-            if (parent.elementPosition) {
-                node.elementPosition = parent.elementPosition.slice(0);
+            if (parent.nodePosition) {
+                node.nodePosition = parent.nodePosition.slice(0);
             } else {
-                node.elementPosition = [];
+                node.nodePosition = [];
             }
-            let elementIndex = Array.prototype.indexOf.call(parent.children, node);
-            node.elementPosition.push(elementIndex);
+
+            let nodeIndex = Array.prototype.indexOf.call(parent.childNodes, node);
+            node.nodePosition.push(nodeIndex);
+
+            if (node.nodeType === node.ELEMENT_NODE) {
+                if (parent.elementPosition) {
+                    node.elementPosition = parent.elementPosition.slice(0);
+                } else {
+                    node.elementPosition = [];
+                }
+                let elementIndex = Array.prototype.indexOf.call(parent.children, node);
+                node.elementPosition.push(elementIndex);
+            }
         }
     }
+
+    //annotate first time
+    annotate();
 })();
 
 function trimSpace(s, trimmed) {
@@ -173,41 +183,3 @@ function isAncestor(node, ancestor) {
     const nodePositions = node.nodePosition;
     return ancestor.nodePosition.every((value, index) => nodePositions[index] === value);
 }
-
-/**
- *
- */
-const Initializer = (function () {
-
-    return {
-        /**
-         * @type {Array<Init>}
-         */
-        toWalk: [],
-
-        /**
-         *
-         * @param {Init} init
-         */
-        register(init) {
-            this.toWalk.push(init);
-        },
-
-        initialize() {
-            let filter = this.toWalk.reduce((previousValue, currentValue) => previousValue | currentValue, 0);
-            let walker = document.createTreeWalker(document.body, filter);
-
-            let node;
-
-            while (node = walker.nextNode()) {
-                this.toWalk.forEach(value => {
-                    if (value.acceptNode(node)) {
-                        value.consumer(node);
-                    } else {
-                        walker.nextSibling();
-                    }
-                });
-            }
-        }
-    }
-})();

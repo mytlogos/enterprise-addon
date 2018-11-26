@@ -121,9 +121,9 @@ const OverWatch = (function () {
         }
     });
 
-    const name = addInfo("Name", txt => ExMetaExtractor.extractName(txt));
-    const volume = addInfo("Volume", txt => ExMetaExtractor.extractVolume(txt));
-    const chapter = addInfo("Episode", txt => ExMetaExtractor.extractEpisode(txt));
+    const name = addInfo("Name", txt => MetaExtractor.extractName(txt));
+    const volume = addInfo("Volume", txt => MetaExtractor.extractVolume(txt));
+    const chapter = addInfo("Episode", txt => MetaExtractor.extractEpisode(txt));
     let result;
 
 
@@ -153,7 +153,7 @@ const OverWatch = (function () {
      *
      * @param {Array<{trackAble: Result, progress: number}>} progressed
      */
-    ExProgressChecker.onProgress = progressed => {
+    ProgressChecker.onProgress = progressed => {
         let progress = progressed.map(value => {
             let {trackAble, progress} = value;
 
@@ -170,18 +170,19 @@ const OverWatch = (function () {
 
     return {
         start() {
-            console.log("hello");
-            const analyzeResult = ExAnalyzer.analyze();
-            // console.log(analyzeResult);
+            const analyzeResult = Analyzer.analyze();
 
             if (!analyzeResult) {
-                return;
+                console.log("no analyze results");
+                return "no analyze";
             }
+            console.log(analyzeResult);
 
-            let metaResults = MetaExtractor.extractMeta(result);
+            let metaResults = MetaExtractor.extractMeta(analyzeResult);
 
             if (!metaResults) {
-                return;
+                console.log("no meta results");
+                return "no meta";
             }
 
             ProgressChecker.track(metaResults);
@@ -192,13 +193,14 @@ const OverWatch = (function () {
             volume.set(metaResults.volume);
             chapter.set(metaResults.chapter);
 
-            showPopup();
+            //fixme uncomment this
+            // showPopup();
+            return result;
         }
     }
 })();
 
-browser.runtime.onMessage.addListener((msg, sender) => {
-
+listenMessage((msg, sender) => {
     console.log("from", sender, "got", msg);
 
     if (msg.start) {

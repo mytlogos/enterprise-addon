@@ -1,6 +1,6 @@
 .idea/
 #experimental/
-example_data/
+#example_data/
 antiAdScript.js
 client_server.uxf
 proces.uxf

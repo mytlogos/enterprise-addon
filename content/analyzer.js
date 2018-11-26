@@ -24,20 +24,21 @@ const Analyzer = {
         }
         this.running = true;
 
-        let main;
-        try {
-            //run the scoring algorithm
-            let candidates = this.initialize(document);
+        //run the scoring algorithm
+        let candidates = this.initialize(document);
+        console.log(`elements: ${this.elementCount}, bodies: ${this.bodyCount}`);
 
-            //select the content from candidates
-            main = ContentSelector.getContent(candidates);
-        } catch (e) {
-            console.log(e);
-        }
-        console.log(main);
+        //select the content from candidates
+        let main = ContentSelector.getContent(candidates);
+        this.cleanDom();
         this.running = false;
         return main;
         //todo ask what should be expected if this is not the first time sth of this "series"
+    },
+
+    cleanDom() {
+        //todo remove all enterprise objects from dom
+        //todo OR don't couple them in first place
     },
 
     /**
@@ -96,6 +97,8 @@ const Analyzer = {
         return element.enterprise.tag === "img";
     },
 
+    elementCount: 0,
+
     /**
      *
      * @param {HTMLElement} element
@@ -103,12 +106,11 @@ const Analyzer = {
      */
     score(element, candidates) {
         //do not score an element without ancestors
-        if (!element.parentElement)
+        if (!element.parentElement) {
             return;
+        }
 
-        let content = this.createContent(element);
-        element.enterprise = content;
-
+        const content = element.enterprise = this.createContent(element);
         let innerText = this.getOwnText(element);
 
         content.classWeight = this._getClassWeight(element);
@@ -117,6 +119,7 @@ const Analyzer = {
         content.contentCharCount = this._getCharCount(innerText);
         content.lengthBonus = Math.min(Math.floor(innerText.length / 100), 3);
 
+        //???????
         if (!content.scoreAble) {
             if (this.SCORE.textContentTags.includes(content.tag)) {
                 content.tagBonus = 2;
@@ -141,10 +144,10 @@ const Analyzer = {
                 content.link = true;
             }
 
-            //add the score to ancestors of element
-            this.scoreParents(element.parentElement, content, candidates);
         }
-
+        this.elementCount++;
+        //add the score to ancestors of element
+        this.scoreParents(element.parentElement, content, candidates);
         return content;
     },
 
@@ -158,6 +161,8 @@ const Analyzer = {
         return text.split(this.REGEXPS.contentChars).length - 1;
     },
 
+    bodyCount: 0,
+
     /**
      * Add the scores to the elements and their parents
      * as longs as they are initialized.
@@ -169,16 +174,20 @@ const Analyzer = {
      */
     scoreParents(element, content, candidates, level = 0) {
         //stop if there is no element to score or element is not initialized (e.g. the html element)
-        let enterprise = element.enterprise;
+        let parentContent;
 
-        if (!element || !enterprise) {
+        if (element === document.body) {
+            this.bodyCount++;
+        }
+
+        if (!element || !(parentContent = element.enterprise)) {
             return;
         }
 
-        if (enterprise.scoreAble) {
+        if (parentContent.scoreAble) {
             //add element as candidate
             candidates.add(element);
-        } else if (this.SCORE.scoreParentTag.includes(enterprise.tag)) {
+        } else if (this.SCORE.scoreParentTag.includes(parentContent.tag)) {
             //go up the lineage, don't score elements which are items of other elements like li of ol/ul
             return this.scoreParents(element.parentElement, content, candidates, ++level);
         }
@@ -190,37 +199,37 @@ const Analyzer = {
             if (content.video) {
                 //people and i love videos
                 bonus = 20;
-                enterprise.videos.push(content.element);
+                parentContent.videos.push(content.element);
             } else if (content.audio) {
                 //todo not sure if i want to give bonus for audio,
                 // because they do not need to be contextually placed
                 bonus = 12;
-                enterprise.audios.push(content.element);
+                parentContent.audios.push(content.element);
             } else if (content.img) {
                 //images are mostly not alone, so set bonus not too high
                 bonus = 10;
-                enterprise.images.push(content.element);
+                parentContent.images.push(content.element);
             }
-            enterprise.contentScore += bonus;
+            parentContent.contentScore += bonus;
 
         } else if (content.format) {
             //most of the time only content text has formatTags, so give them a little boost
-            enterprise.contentScore += 1;
+            parentContent.contentScore += 1;
         } else if (content.contentTags) {
             //most of the time only content text has textContentTags, so give them a little boost
-            enterprise.contentScore += 1;
-            enterprise.contents.push(content.element);
+            parentContent.contentScore += 1;
+            parentContent.contents.push(content.element);
         } else if (content.link) {
-            enterprise.links.push(content.element);
+            parentContent.links.push(content.element);
         }
 
         //do not divide at level zero, half at level one, divide by level multiplied with 3 above one
         let scoreDivider = level === 0 ? 1 : level === 1 ? 2 : level * 3;
 
         //add contentScore to ancestor
-        enterprise.contentScore += Math.round(content.contentScore / scoreDivider);
+        parentContent.contentScore += Math.round(content.contentScore / scoreDivider);
 
-        enterprise.totalChars += content.totalChars;
+        parentContent.totalChars += content.totalChars;
 
         //go up the lineage
         return this.scoreParents(element.parentElement, content, candidates, ++level);
@@ -610,7 +619,7 @@ const Analyzer = {
                 this.contentScore += content;
             },
 
-            css: (element.id && `#${element.id}`) + (element.className && `.${element.className.replace(/\s/g, ".")}`),
+            css: (element.id && `#${element.id}`) + (element.className && `.${element.className.trim().replace(/\s/g, ".")}`),
 
             fire() {
                 let message = {
@@ -672,7 +681,6 @@ const ContentSelector = {
         sortedCandidates.sort((a, b) => a.enterprise.contentScore - b.enterprise.contentScore).reverse();
 
         //todo do more?
-
         let filteredCandidates = sortedCandidates.filter((value, index, array) => {
             //filter out unsuitable candidates, we need 'content'
             let enterprise = value.enterprise;
@@ -700,6 +708,7 @@ const ContentSelector = {
             return true;
         });
 
+        //fixme only for debug purposes
         let filteredOut = new Set(candidates);
         filteredCandidates.forEach(value => filteredOut.delete(value));
 
@@ -1079,24 +1088,6 @@ const OtherSelector = {
  */
 function arrayMax(array, comparator = (a, b) => Math.max(a, b)) {
     return array.length && array.reduce(comparator);
-}
-
-/**
- *
- * @param {Object} message
- * @param {boolean?} dev
- * @return {Promise<*>}
- */
-function sendMessage(message, dev) {
-    if (dev) {
-        message.url = window.location.href;
-
-        message = {
-            dev: message
-        };
-    }
-
-    return browser.runtime.sendMessage(message).catch(error => console.log(`error for analyzer, msg: `, message, error));
 }
 
 window.addEventListener("unload", () => sendMessage({analyzer: false}, true));
