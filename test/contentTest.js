@@ -25,6 +25,7 @@ async function testSingle(file) {
 async function testPage(chromium, file) {
     const page = await chromium.newPage();
     await page.goto("file://" + file);
+
     await page.addScriptTag({path: "./content/initializer.js"});
     await page.addScriptTag({path: "./content/analyzer.js"});
     await page.addScriptTag({path: "./test/progressCheckDub.js"});
@@ -36,4 +37,19 @@ async function testPage(chromium, file) {
     }).catch(error => console.log(file, ": ", error));
     console.log(result, file);
 }
+
+/*
+https://kissanime.ru/Anime/The-Seven-Deadly-Sins/Episode-016?id=86093&s=default
+elements: 98, bodies: 97
+overWatch.js:212 TypeError: Cannot read property '0' of undefined
+    at ancestor.nodePosition.every (initializer.js:184)
+    at Array.every (<anonymous>)
+    at isAncestor (initializer.js:184)
+    at sortedCandidates.filter (analyzer.js:700)
+    at Array.filter (<anonymous>)
+    at Object.getContent (analyzer.js:684)
+    at Object.analyze (analyzer.js:32)
+    at Object.start (overWatch.js:174)
+    at window.addEventListener (overWatch.js:210)
+ */
 

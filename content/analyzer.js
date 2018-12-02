@@ -48,7 +48,7 @@ const Analyzer = {
      * @param {HTMLElement} element
      * @return number (Integer)
      **/
-    _getClassWeight: function (element) {
+    getClassWeight: function (element) {
         let weight = 0;
 
         // Look for a special className
@@ -113,7 +113,7 @@ const Analyzer = {
         const content = element.enterprise = this.createContent(element);
         let innerText = this.getOwnText(element);
 
-        content.classWeight = this._getClassWeight(element);
+        content.classWeight = this.getClassWeight(element);
 
         //add score for every contentChar (,.:) i want
         content.contentCharCount = this._getCharCount(innerText);
@@ -121,10 +121,10 @@ const Analyzer = {
 
         //???????
         if (!content.scoreAble) {
-            if (this.SCORE.textContentTags.includes(content.tag)) {
+            if (content.tag in this.SCORE.textContentTags) {
                 content.tagBonus = 2;
                 content.contentTags = true;
-            } else if (this.SCORE.mediaTags.includes(content.tag)) {
+            } else if (content.tag in this.SCORE.mediaTags) {
                 content.tagBonus = 2;
                 content.media = true;
 
@@ -136,7 +136,7 @@ const Analyzer = {
                     content.img = true;
                 }
 
-            } else if (this.SCORE.formatTags.includes(content.tag)) {
+            } else if (content.tag in this.SCORE.formatTags) {
                 content.tagBonus = 2;
                 content.format = true;
             } else if (content.tag === "a") {
@@ -158,7 +158,7 @@ const Analyzer = {
      * @private
      */
     _getCharCount(text) {
-        return text.split(this.REGEXPS.contentChars).length - 1;
+        return (text.match(this.REGEXPS.contentChars) || []).length;
     },
 
     bodyCount: 0,
@@ -187,7 +187,7 @@ const Analyzer = {
         if (parentContent.scoreAble) {
             //add element as candidate
             candidates.add(element);
-        } else if (this.SCORE.scoreParentTag.includes(parentContent.tag)) {
+        } else if (parentContent.tag in this.SCORE.scoreParentTag) {
             //go up the lineage, don't score elements which are items of other elements like li of ol/ul
             return this.scoreParents(element.parentElement, content, candidates, ++level);
         }
@@ -243,7 +243,7 @@ const Analyzer = {
     initialize(doc) {
         let walker = document.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT, {
             acceptNode: node => {
-                if (this.skipElement(node) || this.noContent(node) || !this.isVisible(node)) {
+                if (this.skipElement(node) || this.noContent(node)) {
                     //reject if node should be skipped or has no content
                     return NodeFilter.FILTER_REJECT;
                 } else {
@@ -404,10 +404,11 @@ const Analyzer = {
      * be visible (not necessarily in viewport) and have content.
      *
      * @param {HTMLElement} element
+     * @param {string} tag
      * @return {boolean}
      */
-    isScoreAble(element) {
-        return this.SCORE.scoreTags.includes(element.tagName.toLowerCase())
+    isScoreAble(element, tag) {
+        return tag in this.SCORE.scoreTags
             && this.anyVisible(element)
             && !this.noContent(element);
     },
@@ -443,7 +444,10 @@ const Analyzer = {
      * @return {boolean}
      */
     skipElement(element) {
-        return this.SCORE.skipTags.includes(element.tagName.toLowerCase()) || element.classList.contains("enterprise-popup");
+        let tag = element.tagName.toLowerCase();
+        return tag in this.SCORE.skipTags
+            || element.classList.contains("enterprise-popup")
+            || tag in this.SCORE.invisibleTags;
     },
     /**
      * Checks whether the element has no content.
@@ -510,27 +514,28 @@ const Analyzer = {
         prevLink: /(prev|earl|old|new|<|«)/i,
         whitespace: /^\s*$/,
         hasContent: /\S$/,
-        contentChars: /[,.]/,
+        contentChars: /[,.?!](?=\D)/g,
     },
 
     SCORE: {
-        scoreTags: ["div", "main", "article", "section"],
-        skipTags: [
-            "header", "aside", "footer", "nav", "form",
-            "input", "textarea", "button", "select", "optgroup",
-            "option", "label", "fieldset", "legend",
-            "datalist", "output", "style", "dialog", "script", "style"
-        ],
-        scoreParentTag: ["li", "dl", "dt", "dd", "tr", "td", "thead", "tbody", "th"],
-        mediaTags: ["video", "audio", "img"],
-        textContentTags: ["p", "span", "h1", "h2", "h3", "h4", "h5", "h6", "pre"],
-        formatTags: [
-            "abbr", "address", "b", "bdi", "bdo", "big", "blockquote", "center",
-            "cite", "code", "del", "dfn", "em", "font", "i", "ins", "kbd",
-            "mark", "meter", "progress", "q", "rp", "rt", "ruby",
-            "s", "samp", "small", "strike", "strong", "sub", "sup", "template", "time",
-            "tt", "u", "var", "wbr"
-        ],
+        scoreTags: {"div": 1, "main": 1, "article": 1, "section": 1},
+        skipTags: {
+            "header": 1, "aside": 1, "footer": 1, "nav": 1, "form": 1,
+            "input": 1, "textarea": 1, "button": 1, "select": 1,
+            "optgroup": 1, "option": 1, "label": 1, "fieldset": 1,
+            "legend": 1, "datalist": 1, "output": 1,
+            "dialog": 1, "script": 1, "style": 1, "svg": 1
+        },
+        scoreParentTag: {"li": 1, "dl": 1, "dt": 1, "dd": 1, "tr": 1, "td": 1, "thead": 1, "tbody": 1, "th": 1},
+        mediaTags: {"video": 1, "audio": 1, "img": 1},
+        textContentTags: {"p": 1, "span": 1, "h1": 1, "h2": 1, "h3": 1, "h4": 1, "h5": 1, "h6": 1, "pre": 1},
+        formatTags: {
+            "abbr": 1, "address": 1, "b": 1, "bdi": 1, "bdo": 1, "big": 1, "blockquote": 1, "center": 1,
+            "cite": 1, "code": 1, "del": 1, "dfn": 1, "em": 1, "font": 1, "i": 1, "ins": 1, "kbd": 1,
+            "mark": 1, "meter": 1, "progress": 1, "q": 1, "rp": 1, "rt": 1, "ruby": 1,
+            "s": 1, "samp": 1, "small": 1, "strike": 1, "strong": 1, "sub": 1, "sup": 1, "template": 1, "time": 1,
+            "tt": 1, "u": 1, "var": 1, "wbr": 1
+        },
 
         invisibleTags: {
             "html": 1,
@@ -562,7 +567,7 @@ const Analyzer = {
             element: element,
             contentScore: 0,
             id: id,
-            scoreAble: this.isScoreAble(element),
+            scoreAble: this.isScoreAble(element, tag),
             selector: Selector.getQuerySelector(element),
             media: 0,
             videos: [],
@@ -696,7 +701,7 @@ const ContentSelector = {
             for (let i = index - 1; i >= 0; i--) {
                 let item = array[i];
 
-                //if item is ancestor of value
+                //if item is ancestor of value and 'better'
                 if (isAncestor(value, item) &&
                     enterprise.audioLength < item.enterprise.audioLength &&
                     enterprise.videoLength < item.enterprise.videoLength &&
@@ -749,7 +754,7 @@ const ContentSelector = {
         candidates.forEach(value => {
 
         });
-        return this.createResult(null, null, "toc");
+        return this.createResult(null, null, null, "toc");
     },
 
     /**
@@ -764,6 +769,9 @@ const ContentSelector = {
 
         //filter candidates who have real text content
         candidates = candidates.filter(element => {
+            if (!element.enterprise.contents.length) {
+                return;
+            }
             const positiveText = Analyzer.getNonNegativeText(element);
             const positiveContent = Analyzer._getCharCount(positiveText);
 
@@ -776,7 +784,7 @@ const ContentSelector = {
             let removeProbably = [];
 
             for (let candidate of candidates) {
-                //continue if candidate is no child of value
+                //continue if candidate is no child of value or value itself
                 if (value === candidate || !isAncestor(candidate, value)) {
                     continue;
                 }
@@ -788,7 +796,7 @@ const ContentSelector = {
                     //if the difference between positiveChars is too big,
                     //the child is surely missing things, so remove it
                     removeProbably.push(candidate);
-                } else if (valuePosChars === candidatePosChars) {
+                } else {
                     //if value (parent) has same posChars as candidate(child) remove value
                     outFiltered.push(value);
                 }
@@ -818,7 +826,7 @@ const ContentSelector = {
             let first = contents[0];
             let last = contents[contents.length - 1];
 
-            return this.createResult(first, last, "text", true);
+            return this.createResult(first, last, candidate, "text", true);
         });
 
         if (result.length === 1) {
@@ -873,7 +881,7 @@ const ContentSelector = {
         let start = max.enterprise.images[0];
         let end = max.enterprise.images[max.enterprise.images.length - 1];
 
-        return this.createResult(start, end, "image", true);
+        return this.createResult(start, end, max, "image", true);
     },
 
     /**
@@ -891,7 +899,7 @@ const ContentSelector = {
         }
 
         const video = topCandidate.enterprise.videos[0];
-        return topCandidate && this.createResult(video, video, "video", true, true);
+        return topCandidate && this.createResult(video, video, video, "video", true, true);
     },
 
     /**
@@ -908,7 +916,7 @@ const ContentSelector = {
             return
         }
         const audio = topCandidate.enterprise.audios[0];
-        return topCandidate && this.createResult(audio, audio, "audio", false, true);
+        return topCandidate && this.createResult(audio, audio, audio, "audio", false, true);
     },
 
 
@@ -917,13 +925,14 @@ const ContentSelector = {
      *
      * @param {HTMLElement} start
      * @param {HTMLElement} end
+     * @param {HTMLElement} ancestor
      * @param {string} type
      * @param {boolean?} seeAble
      * @param {boolean?} durationAble
      * @return {boolean|AnalyzeResult}
      */
-    createResult(start, end, type, seeAble, durationAble) {
-        return start && end && {start, end, type, seeAble, durationAble}
+    createResult(start, end, ancestor, type, seeAble, durationAble) {
+        return start && end && ancestor && {start, end, ancestor, type, seeAble, durationAble}
     },
 
 };
@@ -1097,6 +1106,7 @@ window.addEventListener("unload", () => sendMessage({analyzer: false}, true));
  *
  * @property {HTMLElement} start
  * @property {HTMLElement} end
+ * @property {HTMLElement} ancestor
  * @property {string} type
  * @property {boolean} seeAble
  * @property {boolean} durationAble

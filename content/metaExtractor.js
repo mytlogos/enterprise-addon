@@ -101,6 +101,7 @@ const MetaExtractor = (function () {
             set hasLink(on) {
                 return setMask(on, LINK);
             },
+
             get hasHRule() {
                 return getMask(HRULE);
             },
@@ -167,15 +168,14 @@ const MetaExtractor = (function () {
     function findMeta(commonParent, multiple) {
 
         let lineNodesList = lineNodes();
+
         //map lines to viable candidates
         let candidates = lineNodesList.map((value, index, array) => {
             let [line, node] = value;
 
-            // noinspection JSValidateTypes
             let result = createCandidate(node, line);
-            //
+
             headings(result, node);
-            breadcrumb(result, node);
             links(result, node);
 
             if (multiple) {
@@ -196,10 +196,14 @@ const MetaExtractor = (function () {
         //we need at least candidates with a score greater than zero
         candidates = candidates.filter(value => value.score > 0);
 
+        //return meta of all candidates because we got only one result input
         if (!multiple) {
             return meta(candidates);
         }
 
+        //divide candidates hierarchically between parents, so that
+        //a candidate which is hierarchically higher does not share
+        //candidates with 'lower' parents
         let wedgedCandidates = wedgeCandidates(candidates, commonParent, 0.5);
         let resultMap = new Map();
 
@@ -209,6 +213,7 @@ const MetaExtractor = (function () {
             }
             let metaResult = meta(value);
             metaRest(candidates, metaResult);
+
             resultMap.set(key, metaResult);
         });
         return resultMap;
@@ -239,20 +244,43 @@ const MetaExtractor = (function () {
      * Sets the breadcrumb attribute of result to true
      * if the element or it´s parents is a viable breadcrumb (class-wise).
      *
-     * @param {Candidate} result
-     * @param {HTMLElement} node
+     * @param {HTMLElement} node suspect of being (in) a breadCrumb
+     * @param {number} index current index number of node in lineNodes
+     * @param {TreeWalker} walker
+     * @return {void|Array<Object>} nothing or new lines objects
      */
-    function breadcrumb(result, node) {
+    function breakBreadcrumb(node, index, walker) {
+        let breadCrumb;
         if (node.nodeType === Node.ELEMENT_NODE && node.matches("[class*=bread],[class*=crumb]")) {
-            result.hasBreadcrumb = true;
+            breadCrumb = node;
         } else {
             for (let parent of parents(node)) {
                 if (parent.matches("[class*=bread],[class*=crumb]")) {
-                    result.hasBreadcrumb = true;
-                    break;
+                    breadCrumb = parent;
                 }
             }
         }
+
+        if (!breadCrumb) {
+            return;
+        }
+
+        let newLines = [];
+        node = walker.currentNode;
+
+        while (node) {
+            if (!isAncestor(node, breadCrumb)) {
+                walker.previousNode();
+                break;
+            }
+            let trim = node.data.trim();
+
+            if (node.data && trim.length > 1) {
+                newLines.push([trim, node, index++]);
+            }
+            node = walker.nextNode();
+        }
+        return newLines.length ? newLines : undefined;
     }
 
     /**
@@ -263,14 +291,25 @@ const MetaExtractor = (function () {
      * @param {HTMLElement|HTMLLinkElement} node
      */
     function links(result, node) {
-        if (node.nodeType === Node.ELEMENT_NODE && node.tagName === "A") {
+        if (node.nodeType === Node.ELEMENT_NODE && node.tagName.toLowerCase() === "a") {
             result.link = node.href;
         } else {
+            //is there a link 'above' node?
             for (let parent of parents(node)) {
-                if (parent.tagName === "a") {
+                if (parent.tagName.toLowerCase() === "a") {
                     result.link = parent.href;
-                    break;
+                    return;
                 }
+            }
+            if (node.nodeType !== Node.ELEMENT_NODE) {
+                node = node.parentElement;
+            }
+
+            //is there a link 'below' node?
+            let childLink = node.querySelector("a");
+
+            if (childLink) {
+                result.link = childLink.href;
             }
         }
     }
@@ -307,9 +346,24 @@ const MetaExtractor = (function () {
         }
     }
 
-//remove any number only path sections, are mostly only things like id´s or dates
-    let path = document.location.pathname.replace(/\/\d+\//g, "/");
-    let pathSnippets = generateRegex(path, "/", "-");
+    let path;
+    let pathSnippets;
+    let abbr;
+    let abbrReg;
+    let titleSnippets;
+
+    /**
+     * Init path- and title-related values, each time the extractor is run
+     */
+    function init() {
+        //remove any number only path sections, are mostly only things like id´s or dates
+        path = document.location.pathname.replace(/\/\d+\//g, "/");
+        pathSnippets = generateRegex(path, "/", "-");
+
+        titleSnippets = generateRegex(document.title, /[|\-–\\\/>»]/, /\s/);
+        ({titleReg: abbrReg, abbr} = titleAbbrRegex());
+    }
+
 
     /**
      * Matches the pathSnippets against the
@@ -364,9 +418,6 @@ const MetaExtractor = (function () {
         return {titleReg, abbr};
     }
 
-    const titleSnippets = generateRegex(document.title, /[|\-–\\\/>»]/, /\s/);
-    const {abbr} = titleAbbrRegex();
-
     /**
      * Matches the line against the title snippets and
      * saves the result in the title property of result.
@@ -399,8 +450,8 @@ const MetaExtractor = (function () {
             result.title = titleMatchSnippets;
         }
 
-        if (abbr) {
-            const abbrMatch = line.match(abbr);
+        if (abbrReg) {
+            const abbrMatch = line.match(abbrReg);
 
             if (abbrMatch) {
                 result.novelAbbr = abbrMatch;
@@ -459,7 +510,7 @@ const MetaExtractor = (function () {
                 .map(snippet => {
                     snippet = snippet.replace(/s$/, "['´`’]?s");
                     snippet = regExpEscape(snippet);
-                    return new RegExp("(\\W|^)" + snippet + "([^a-z]|$)", "i");
+                    return new RegExp("(?:\\W|^)" + snippet + "(?:[^a-z]|$)", "i");
                 }))
             .filter(snippets => snippets.length);
     }
@@ -481,6 +532,7 @@ const MetaExtractor = (function () {
             //then filter it out
             if (candidate.marked ||
                 (candidate.link && navLink.test(candidate.text)) ||
+                //todo this may be debatable
                 candidate.text.length > 200 ||
                 candidate.text.includes(document.location)) {
                 return false;
@@ -546,6 +598,7 @@ const MetaExtractor = (function () {
      * @param {MetaResult} meta
      */
     function metaRest(candidates, meta) {
+        //todo compare with meta modifications and evtl update
         if (!meta.chapter || (!meta.chapIndex && !meta.volIndex && !meta.volume && !meta.novel)) {
             return;
         }
@@ -600,7 +653,7 @@ const MetaExtractor = (function () {
                 meta.volIndex = volIndex && volIndex[0];
 
                 if (volStart) {
-                    meta.novel = chapter.text.substring(0, volStart).trim();
+                    meta.novel = volume.text.substring(0, volStart).trim();
                 }
             }
         }
@@ -737,9 +790,10 @@ const MetaExtractor = (function () {
             let novelCandidates;
             let above;
 
-            novelCandidates = (
-                (above = (chapter || volume)) ? filterNotBelow(candidates, above.node) : candidates
-            ).reverse();
+            novelCandidates = ((above = (chapter || volume))
+                ? filterNotBelow(candidates, above.node)
+                : candidates)
+                .reverse();
 
             let novelCandidate;
 
@@ -777,10 +831,19 @@ const MetaExtractor = (function () {
             } else if (abbr) {
                 result.novel = abbr[0];
             }
+
+            //remove chapter index from novel if it is at the end,
+            //some sites have a chapter title and medium title separate
+            //and the chapter index at the end of the name of the medium,
+            //but we want only the name of the medium
+            if (result.novel && result.novel.endsWith(result.chapIndex)) {
+                result.novel = result.novel.substring(0, result.novel.length - result.chapIndex.length);
+            }
         }
 
         function trimSeparators(s) {
-            return s.trim().replace(/(^[|\-–\\\/>»])|([|\-–\\\/>»]$)/g, "").trim();
+            //clean text of separators at beginning and end
+            return s.trim().replace(/(^[|\-–\\\/>»,\[:])|([|\-–\\\/>»,\]:]$)/g, "").trim();
         }
 
         if (result.novel) {
@@ -813,11 +876,11 @@ const MetaExtractor = (function () {
             value.pathScore = 0;
 
             if (value.chapter = (likelyChapReg.exec(value.text) || likelyChapRegSensitive.exec(value.text))) {
-                value.score += 5;
+                value.score += 3;
             }
 
             if (value.volume = likelyVolReg.exec(value.text)) {
-                value.score += 5;
+                value.score += 3;
             }
 
             let volChap;
@@ -862,6 +925,12 @@ const MetaExtractor = (function () {
 
             if (value.chapter && value.link) {
                 value.score--;
+            }
+
+            //we don't want elements(nodes) with 'negative' attributes
+            if (Analyzer.REGEXPS.negative.test(value.node.className)
+                || Analyzer.REGEXPS.negative.test(value.node.id)) {
+                value.score -= 3;
             }
 
             if (value.path) {
@@ -969,7 +1038,7 @@ const MetaExtractor = (function () {
                 }
                 if (node.data.trim()) {
                     if (node.trimmed == null) {
-                        node.trimmed = trimSpace(node.data, true);
+                        node.trimmed = trimSpace(node.data);
                     }
                     return NodeFilter.FILTER_ACCEPT;
                 }
@@ -985,7 +1054,7 @@ const MetaExtractor = (function () {
             .filter(s => s);
 
         const splitter = /\s/;
-
+        //innerText is style aware (e.g. textTransform), but we want untransformed lines
         while (textNode = walker.nextNode()) {
             let textTransform = window.getComputedStyle(textNode.parentElement).textTransform;
             let text;
@@ -1019,9 +1088,33 @@ const MetaExtractor = (function () {
         //reset walker
         walker.currentNode = walker.root;
 
+        function elementDisplayed(element) {
+            let parent = element;
+
+            while (parent) {
+                if (window.getComputedStyle(parent).display === "none") {
+                    return false;
+                }
+                parent = parent.parentElement;
+            }
+            return true;
+        }
+
+        //selects are not in innerText, get selected displayed options to insert them
+        let options = Array
+            .from(document.querySelectorAll("select"))
+            .filter(value => elementDisplayed(value))
+            .map(value => value[value.selectedIndex]);
+
         //search for nodes which have the text as content
-        for (let index = 0; index < lines.length; index++) {
-            let line = lines[index];
+        for (let i = 0, index = 0; i < lines.length; i++, index++) {
+            let line = lines[i];
+
+            if (line.length <= 1) {
+                index--;
+                continue;
+            }
+
             let node;
 
             let current = walker.currentNode;
@@ -1061,14 +1154,34 @@ const MetaExtractor = (function () {
             }
 
             if (node) {
-                //if a node was found, push it
-                lineNodes.push([line, node, index]);
+                let option = options[0];
+
+                if (option && isAbove(option, node)) {
+                    let line = trimSpace(option.textContent);
+
+                    if (line.length > 1) {
+                        lineNodes.push([line, node, index++]);
+                        options.shift();
+                    }
+                }
+
+                //we are breaking breadcrumbs apart, so that it can be matched each
+                let newLines = breakBreadcrumb(node, index, walker);
+
+                if (newLines) {
+                    lineNodes.push(...newLines);
+                    index += newLines.length - 1;
+                } else {
+                    //if a node was found, push it
+                    lineNodes.push([line, node, index]);
+                }
             } else {
                 //if no valid node for that line was found, remove it
                 //and reset walker to before the node search
-                lines.splice(index, 1);
-                index--;
                 walker.currentNode = current;
+                lines.splice(i, 1);
+                index--;
+                i--;
             }
         }
         return lineNodes;
@@ -1103,12 +1216,14 @@ const MetaExtractor = (function () {
             if (!analyzeResult) {
                 return;
             }
+            //init path and title related values
+            init();
 
             let ancestor;
             let multiple;
 
             if (multiple = Array.isArray(analyzeResult)) {
-                ancestor = analyzeResult.map(value => value.ancestor = closestCommonAncestor(value.start, value.end));
+                ancestor = analyzeResult.map(value => value.ancestor);
 
                 //sort ancestors after they hierarchy,
                 //earliest elements at the beginning, later elements at the end
@@ -1122,7 +1237,7 @@ const MetaExtractor = (function () {
                     }
                 });
             } else {
-                ancestor = closestCommonAncestor(analyzeResult.start, analyzeResult.end);
+                ancestor = analyzeResult.ancestor;
             }
             let metaResult = findMeta(ancestor, multiple);
 
@@ -1141,27 +1256,12 @@ const MetaExtractor = (function () {
             }
             return metaResult;
         },
-
-
-        extractName(s) {
-            //todo is this even necessary?
-            //todo implement extraction
-            return s;
-        },
-
-        extractVolume(s) {
-            //todo implement extraction
-            return s;
-        },
-
-        extractEpisode(s) {
-            //todo implement extraction
-            return s;
-        },
     };
 
 })();
 
+//todo what if a line contains the same text multiple times like:
+//"read Anz Chapter 19 english, Anz Chapter 19 manhwa, Anz Chapter 19 manhwa online, Anz Chapter 19 for free, Anz Chapter 19 high quality, Anz Chapter 19 english scan, Anz Chapter 19 manhwa scan"
 /**
  * @typedef {Object} Result
  * @property {HTMLElement} start

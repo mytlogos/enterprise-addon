@@ -47,7 +47,10 @@ function sendMessage(message, dev) {
  * Annotates each node with their current positions
  * in the node- & element hierarchy.
  */
-(function annotateDOM() {
+let Ready = (function annotateDOM() {
+    let ready;
+    let readyFunction;
+
     function annotate() {
         let walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
         let node;
@@ -74,15 +77,90 @@ function sendMessage(message, dev) {
                 node.elementPosition.push(elementIndex);
             }
         }
+
+        ready = true;
+        readyFunction && readyFunction();
     }
 
-    //annotate first time
-    annotate();
+    //annotate first time, when page is ready
+    if (document.readyState !== "complete") {
+        window.addEventListener("load", annotate);
+    } else {
+        annotate();
+    }
+
+    let timeoutId;
+
+    function invalidate(doAnnotation = true) {
+        ready = false;
+
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+        }
+        if (doAnnotation) {
+            //if dom was changed wait for 500ms to make sure no further change is made
+            timeoutId = setTimeout(annotate, 500);
+        } else if (readyFunction) {
+            timeoutId = setTimeout(readyFunction, 500);
+        }
+    }
+
+    const internalPopupClass = "enterprise-popup";
+
+    function isInternalPopup(node) {
+        while (node) {
+            if (node.className === internalPopupClass) {
+                return true;
+            }
+            node = node.parentElement;
+        }
+        return false;
+    }
+
+    const domObserver = new MutationObserver(records => {
+        //find a record where the dom tree was manipulated,  but not by this extension itself
+        let record = records.find(value =>
+            value.addedNodes.length
+            && !findLikeArray(value.addedNodes, isInternalPopup)
+            || value.removedNodes.length
+            && !findLikeArray(value.removedNodes, isInternalPopup));
+
+        //if dom is still the same, return
+        if (!record) {
+            return;
+        }
+        invalidate(true);
+    });
+
+    domObserver.observe(document.body, {subtree: true, childList: true});
+
+    let oldTitle = document.title;
+    //sometimes the title (which is important for metadata extraction)
+    //changes by network response, so run queue function again, but no annotation
+    setInterval(() => {
+        if (oldTitle !== document.title) {
+            oldTitle = document.title;
+            invalidate();
+        }
+    }, 200);
+
+    return {
+
+        /**
+         * Callback which will be called after 500ms timeOut,
+         * which will be refreshed every time the dom changed after 500ms.
+         *
+         * @param callback
+         */
+        set onReady(callback) {
+            readyFunction = callback;
+            ready && callback && callback();
+        }
+    };
 })();
 
-function trimSpace(s, trimmed) {
-    let replaced = s.replace(/\s+/g, " ");
-    return trimmed ? replaced : replaced.trim();
+function trimSpace(s) {
+    return s.replace(/\s+/g, " ").trim();
 }
 
 function closestCommonAncestor(first, second) {
@@ -175,6 +253,14 @@ function isBelow(below, main) {
                 return false;
             }
             return belowParentPos > mainParentPos;
+        }
+    }
+}
+
+function findLikeArray(arrayLike, findCallback) {
+    for (let item of arrayLike) {
+        if (findCallback(item)) {
+            return item;
         }
     }
 }
