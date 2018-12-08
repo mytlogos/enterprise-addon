@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+
+<script>
+    (function () {
+        function addInfo(name, parent, defaultValue = "N/A") {
+            const container = document.createElement("div");
+            const identifier = document.createElement("span");
+
+            identifier.innerText = name;
+            identifier.style.color = "#f7f7f7";
+            identifier.style.display = "inline-block";
+
+            const infoInput = document.createElement("input");
+            infoInput.setAttribute("type", "text");
+            infoInput.value = defaultValue;
+            infoInput.spellcheck = false;
+            infoInput.style.outlineWidth = "0";
+            infoInput.style.borderWidth = "0";
+            infoInput.style.backgroundColor = "#656161";
+            infoInput.style.color = "#e2e2e2";
+            infoInput.style.display = "inline-block";
+
+            const button = document.createElement("button");
+            button.innerText = "$";
+
+            button.style.transitionDuration = "0.4s";
+            button.style.border = "none";
+            button.style.color = "white";
+            button.style.textAlign = "center";
+            button.style.textDecoration = "none";
+            button.style.display = "inline-block";
+            button.style.cursor = "pointer";
+            button.style.backgroundColor = "#4d4949";
+            button.style.color = "white";
+
+            button.addEventListener("mouseenter", () => (button.style.backgroundColor = "white") && (button.style.color = "black"));
+            button.addEventListener("mouseleave", () => (button.style.backgroundColor = "#4d4949") && (button.style.color = "white"));
+            button.addEventListener("click", () => selectText = txt => txt.length < 300 && accessor.set(txt));
+
+            container.appendChild(identifier);
+            container.appendChild(button);
+            container.appendChild(infoInput);
+
+            parent.appendChild(container);
+
+            let text;
+
+            const accessor = {
+                get value() {
+                    return text;
+                },
+
+
+                set value(txt) {
+                    text = infoInput.value = txt;
+                },
+
+                resize(factor) {
+                    console.log(factor);
+
+                    container.style.height = `${23 / factor}px`;
+                    container.style.width = `${234 / factor}px`;
+                    container.style.padding = `${5 / factor}px`;
+                    container.style.fontSize = `${16 / factor}px`;
+
+                    identifier.style.width = `${52 / factor}px`;
+                    identifier.style.height = `${18 / factor}px`;
+
+                    infoInput.style.fontSize = `${12 / factor}px`;
+
+                    infoInput.style.width = `${150 / factor}px`;
+                    infoInput.style.height = `${16 / factor}px`;
+                    infoInput.style.paddingLeft = `${2 / factor}px`;
+                    infoInput.style.paddingTop = `${1 / factor}px`;
+                    infoInput.style.paddingBottom = `${1 / factor}px`;
+
+                    button.style.margin = `${4 / factor}px ${5 / factor}px`;
+                    button.style.padding = `0 ${5 / factor}px`;
+                    button.style.fontSize = `${10 / factor}px`;
+                    button.style.border = `${2 / factor}px solid rgb(186, 186, 186)`;
+                },
+
+                remove() {
+                    container.parentElement && container.parentElement.removeChild(container);
+                }
+            };
+            return accessor;
+        }
+
+        const popup = document.createElement("div");
+        document.body.appendChild(popup);
+
+        popup.className = "enterprise-popup";
+        popup.style.position = "fixed";
+        popup.style.overflowY = "auto";
+        popup.style.color = "white";
+        popup.style.backgroundColor = "gray";
+        popup.style.lineHeight = "normal";
+        popup.style.zIndex = "9999";
+
+        let oldRatio;
+        let selectText;
+        let result;
+        let display = createItem();
+
+        //clean up
+        window.addEventListener("unload blur", () => popup.parentElement && popup.parentElement.removeChild(popup));
+
+        //if there is a textProcessor('selectText'), get the clicked text and inject it in textProcessor
+        window.addEventListener("click", evt => {
+            let node = evt.target;
+            let ignore = node === popup;
+
+            if (!ignore) {
+                while (node = node.parentElement) {
+                    if (ignore = node === popup) {
+                        break;
+                    }
+                }
+            }
+
+            if (!ignore) {
+                selectText && node.innerText && selectText(node.innerText);
+                selectText = undefined;
+            }
+        });
+
+        function createItem(container = popup) {
+            let intermediateContainer = document.createElement("div");
+            container.appendChild(intermediateContainer);
+
+            let name = addInfo("Name", intermediateContainer);
+            let volume = addInfo("Volume", intermediateContainer);
+            let chapter = addInfo("Episode", intermediateContainer);
+
+            name.resize(oldRatio || 1);
+            chapter.resize(oldRatio || 1);
+            volume.resize(oldRatio || 1);
+
+            return {
+                name: name,
+                volume: volume,
+                chapter: chapter,
+
+                resize(factor) {
+                    this.name.resize(factor);
+                    this.chapter.resize(factor);
+                    this.volume.resize(factor);
+                },
+
+                even() {
+                    intermediateContainer.style.backgroundColor = "#8c8c8c";
+                },
+
+                odd() {
+                    intermediateContainer.style.backgroundColor = "#7d7d7d";
+                },
+
+                remove() {
+                    popup.removeChild(intermediateContainer)
+                },
+
+                add() {
+                    popup.appendChild(intermediateContainer)
+                }
+            };
+        }
+
+        setInterval(() => {
+            let ratio = window.devicePixelRatio;
+
+            if (ratio === oldRatio) {
+                return;
+            }
+
+            oldRatio = ratio;
+
+            popup.style.right = `${20 / ratio}px`;
+            popup.style.height = `${100 / ratio}px`;
+            popup.style.bottom = `${20 / ratio}px`;
+
+            if (Array.isArray(display)) {
+                for (let item of display) {
+                    item.resize(ratio);
+                }
+            } else {
+                display.resize(ratio);
+            }
+            console.log(ratio);
+        }, 100);
+
+        let resultSingle = {
+            name: "Abra Kadabra Simsala Bim",
+            chapter: "Chapter 1: The Beginning",
+            volume: "Volume 1: The Start is hard after all."
+        };
+
+        let resultMulti = [
+            {
+                name: "Abra Kadabra Simsala Bim",
+                chapter: "Chapter 1: The Beginning",
+                volume: "Volume 1: The Start is hard after all."
+            },
+            {
+                name: "Abra Kadabra Simsala Bim",
+                chapter: "Chapter 2: The Beginning",
+                volume: "Volume 1: The Start is hard after all."
+            },
+            {
+                name: "Abra Kadabra Simsala Bim",
+                chapter: "Chapter 3: The Beginning",
+                volume: "Volume 1: The Start is hard after all."
+            },
+            {
+                name: "Abra Kadabra Simsala Bim",
+                chapter: "Chapter 4: The Beginning",
+                volume: "Volume 1: The Start is hard after all."
+            },
+            {
+                name: "Abra Kadabra Simsala Bim",
+                chapter: "Chapter 5: The Beginning",
+                volume: "Volume 1: The Start is hard after all."
+            },
+            {
+                name: "Abra Kadabra Simsala Bim",
+                chapter: "Chapter 6: The Beginning",
+                volume: "Volume 1: The Start is hard after all."
+            },
+        ];
+
+        displayResult(resultSingle);
+
+        function displayResult(newResult) {
+            let newIsArray = Array.isArray(newResult);
+
+            function setDisplayValues(displayItem, item) {
+                displayItem.volume.value = item.volume;
+                displayItem.chapter.value = item.chapter;
+                displayItem.name.value = item.name;
+            }
+
+            function adjustItemSize() {
+                let sizeDifference = popup.childNodes.length - newResult.length;
+
+                if (sizeDifference > 0) {
+                    //we need to remove items
+                    for (let i = 0; i < sizeDifference; i++) {
+                        display.shift().remove();
+                    }
+                } else if (sizeDifference = Math.abs(sizeDifference)) {
+                    //we need to append items
+                    for (let i = 0; i < sizeDifference; i++) {
+                        display.push(createItem());
+                    }
+                }
+
+                for (let i = 0; i < display.length; i++) {
+                    console.log(i);
+                    if (i % 2 === 0) {
+                        display[i].even();
+                    } else {
+                        display[i].odd();
+                    }
+                }
+            }
+
+            if (Array.isArray(result)) {
+                if (newIsArray) {
+                    adjustItemSize();
+
+                    //set values of items
+                    for (let i = 0; i < newResult.length; i++) {
+                        setDisplayValues(display[i], newResult[i]);
+                    }
+                } else {
+                    //old Value was an array, now its a single
+                    //change from multi to single mode
+                    let deleteLength = display.length - 1;
+                    for (let i = 0; i < deleteLength; i++) {
+                        display.shift().remove();
+                    }
+                    display = display[0];
+                    display.even();
+                    setDisplayValues(display, newResult);
+                }
+            } else if (newIsArray) {
+                display = [display];
+                adjustItemSize();
+
+                //set values of items
+                for (let i = 0; i < newResult.length; i++) {
+                    setDisplayValues(display[i], newResult[i]);
+                }
+            } else {
+                //if neither of both are arrays, just set new values
+                setDisplayValues(display, newResult);
+            }
+            result = newResult;
+        }
+
+        popup.addEventListener("click", () => displayResult(Array.isArray(result) ? resultSingle : resultMulti));
+    })();
+</script>
+</body>
+</html>
