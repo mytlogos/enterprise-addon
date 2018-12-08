@@ -85,11 +85,13 @@ class PageWrapper {
      * @param {string} host
      * @param {string} url
      * @param {number} tabId
+     * @param {number} wrapperId
      */
-    constructor(host, url, tabId) {
+    constructor(host, url, tabId, wrapperId) {
         this.host = host;
         this.url = url;
         this.tabId = tabId;
+        this.wrapperId = wrapperId;
 
         this.active = states.INACTIVE;
         this.analyzed = false;
@@ -198,6 +200,9 @@ const ExtensionManager = {
      * @return {PageWrapper}
      */
     getWrapper(tabId) {
+        if (!Number.isInteger(tabId)) {
+            throw Error(`id is not a number: '${tabId}'`);
+        }
         return this.tabs.get(tabId);
     },
 
@@ -308,23 +313,23 @@ const ExtensionManager = {
 
     /**
      *
-     * @param sender
-     * @param msg
+     * @param {Tab} senderTab
+     * @param {Object} msg
      */
-    processDevMsg(sender, msg) {
+    processDevMsg(senderTab, msg) {
         let currentPort;
 
         for (let port of this.devPorts) {
-            if (port.id === sender.tab.id) {
+            if (port.id === senderTab.id) {
                 currentPort = port;
                 break;
             }
         }
 
-        let wrapper = this.getWrapper(sender.tab.id);
+        let wrapper = this.getWrapper(senderTab.id);
 
         if (!wrapper) {
-            throw Error(`there cannot be a message from non-existing wrapper with id ${sender.tab.id}, ${msg}`);
+            throw Error(`there cannot be a message from non-existing wrapper with id ${senderTab.id}, ${msg}`);
         }
 
         if (!wrapper.devCache) {
@@ -349,9 +354,20 @@ const ExtensionManager = {
     },
 
 
-    processOverWatch(result) {
-        console.log("overWatch result: ", result);
-        //todo implement result processor
+    /**
+     *
+     * @param {Object} result
+     * @param {browser.tabs.Tab} senderTab
+     */
+    processOverWatch(result, senderTab) {
+        let wrapper = this.getWrapper(senderTab.id);
+
+        if (!wrapper) {
+            throw Error(`no wrapper found for '${senderTab.id}'`)
+        }
+
+        result.contentSession = wrapper.wrapperId;
+        UserSystem.pushMessage(result);
     },
 
     /**
@@ -404,16 +420,16 @@ const ExtensionManager = {
             ifLoggedIn(() => {
                 browser.tabs
                     .get(activeInfo.tabId)
-                    .then(value => {
+                    .then(tab => {
                         //check if an wrapper with this tabId is available
-                        let wrapper = this.getWrapper(value.id);
+                        let wrapper = this.getWrapper(tab.id);
 
                         //check if that wrapper has the same url as the tab has now, else create a new wrapper
-                        if (wrapper && value.url === wrapper.url) {
+                        if (wrapper && tab.url === wrapper.url) {
                             this.selected = wrapper;
                             this.displayState().catch(console.log);
                         } else {
-                            let host = this.getHost(value);
+                            let host = this.getHost(tab);
                             //if there is no valid host, reset selected and return
                             if (!host) {
                                 this.selected = undefined;
@@ -421,9 +437,9 @@ const ExtensionManager = {
                                 return
                             }
                             //create a new page wrapper
-                            this.selected = this.createWrapper(host, value.url, value.id);
+                            this.selected = this.createWrapper(host, tab.url, tab.id);
                             //replace any previous wrapper for this tab
-                            this.tabs.set(value.id, this.selected);
+                            this.tabs.set(tab.id, this.selected);
                             return this.selected.init();
                         }
                     })
@@ -436,6 +452,10 @@ const ExtensionManager = {
 
         //reacts to messages from content scripts of pages or the browserAction
         browser.runtime.onMessage.addListener((msg, sender) => {
+            //ignore message that are not send from this extension
+            if (sender.id !== browser.runtime.id) {
+                return;
+            }
             console.log(msg, sender);
 
             //state message come from browserAction popup
@@ -447,10 +467,10 @@ const ExtensionManager = {
                 }
             }
 
-            //analyze message comes from analyzer.js
-            if (msg.overWatch) {
+            //result and progress messages coming from overWatch.js
+            if (msg.overWatch && sender && sender.tab) {
                 try {
-                    this.processOverWatch(msg.overWatch);
+                    this.processOverWatch(msg.overWatch, sender.tab);
                 } catch (e) {
                     console.log(e);
                 }
@@ -459,7 +479,7 @@ const ExtensionManager = {
             //message from contentScript (analyzer) to devTool
             if (msg.dev && sender && sender.tab) {
                 try {
-                    this.processDevMsg(sender, msg);
+                    this.processDevMsg(sender.tab, msg);
                 } catch (e) {
                     console.log(e);
                 }
@@ -519,9 +539,20 @@ const ExtensionManager = {
      * @return {PageWrapper}
      */
     createWrapper(host, url, tabId) {
-        return new PageWrapper(host, url, tabId);
+        return new PageWrapper(host, url, tabId, nextWrapperId());
     }
 };
+
+/**
+ * Returns the next ID number.
+ * Starts at zero.
+ *
+ * @type function
+ */
+const nextWrapperId = (function () {
+    let current = 0;
+    return () => current++;
+});
 
 //initiate all listener that are relevant for the extensionManager
 ExtensionManager.initListener();

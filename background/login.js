@@ -132,6 +132,12 @@ const UserSystem = {
         return WSClient.startPush();
     },
 
+    pushMessage(message) {
+        if (user.session) {
+            WSClient.push(message);
+        }
+    },
+
     /***
      * Saves the Extension active state for a given host of the active
      * user if available.
@@ -219,4 +225,4 @@ setInterval(() => {
     } catch (e) {
 
     }
-}, 6000);
+}, 10000);
