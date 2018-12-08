@@ -532,9 +532,10 @@ const MetaExtractor = (function () {
             //then filter it out
             if (candidate.marked ||
                 (candidate.link && navLink.test(candidate.text)) ||
-                //todo this may be debatable
+                //todo testing for specific length may be debatable
                 candidate.text.length > 200 ||
-                candidate.text.includes(document.location)) {
+                candidate.text.includes(document.location) ||
+                isInternalPopup(candidate.node)) {
                 return false;
             }
 
@@ -779,7 +780,7 @@ const MetaExtractor = (function () {
                 result.volIndex = volIndex && volIndex[0];
 
                 if (volStart) {
-                    result.novel = chapter.text.substring(0, volStart).trim();
+                    result.novel = volume.text.substring(0, volStart).trim();
                 }
             }
         }
@@ -944,7 +945,7 @@ const MetaExtractor = (function () {
                         }
                     }
 
-                    const perc = matchSnippet.length && matches / matchSnippet.length;
+                    const perc = matchSnippet.length && (matches / matchSnippet.length);
                     //a bonus value between 0 and 3
                     let pathScore = Number((3 * perc).toFixed(3));
                     value.score += pathScore;
@@ -964,8 +965,8 @@ const MetaExtractor = (function () {
                     }
 
                     const perc = matchSnippet.length && matches / matchSnippet.length;
-                    //a bonus value between 0 and 3
-                    let titleScore = Number((3 * perc).toFixed(3));
+                    //a bonus value between 0 and 5
+                    let titleScore = Number((5 * perc).toFixed(3));
 
                     value.score += titleScore;
                     value.titleScore += titleScore;
@@ -1203,8 +1204,6 @@ const MetaExtractor = (function () {
         return literal_string.replace(/[-[\]{}()*+!<=:?.\/\\^$|#\s,]/g, '\\$&');
     }
 
-    //FIXME: @kissanime: does not find nodes corresponding to the lines
-    //fixme: @mangadex: does not find correct title from select
     return {
 
         /**
@@ -1241,7 +1240,6 @@ const MetaExtractor = (function () {
             }
             let metaResult = findMeta(ancestor, multiple);
 
-            //todo this could lead to error/problems if multiple analyzeResults have the same common Ancestor
             //map results to analyzeResults over ancestors
             if (multiple) {
                 metaResult = analyzeResult.map(value => {
@@ -1253,11 +1251,12 @@ const MetaExtractor = (function () {
 
                     return Object.assign(mResult, value);
                 });
+            } else {
+                metaResult = Object.assign(metaResult, analyzeResult);
             }
             return metaResult;
         },
     };
-
 })();
 
 //todo what if a line contains the same text multiple times like:
@@ -1266,6 +1265,8 @@ const MetaExtractor = (function () {
  * @typedef {Object} Result
  * @property {HTMLElement} start
  * @property {HTMLElement} end
+ * @property {HTMLElement} ancestor
+ * @property {number} resultId
  * @property {string} type
  * @property {boolean} seeAble
  * @property {boolean} durationAble

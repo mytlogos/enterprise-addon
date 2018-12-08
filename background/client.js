@@ -47,7 +47,6 @@ class Client extends EventTarget {
      */
     pushed(event) {
         let data;
-        //todo only return if parsing failed or log an error msg
         try {
             data = JSON.parse(event.data);
         } catch (e) {

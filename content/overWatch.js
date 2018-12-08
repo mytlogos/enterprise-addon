@@ -9,22 +9,33 @@ const OverWatch = (function () {
         identifier.style.display = "inline-block";
         identifier.style.boxSizing = "initial";
 
-        const infoInput = document.createElement("input");
-        infoInput.setAttribute("type", "text");
-        infoInput.value = defaultValue;
-        infoInput.spellcheck = false;
+        const valueInput = document.createElement("input");
+        valueInput.setAttribute("type", "text");
+        valueInput.value = defaultValue;
+        valueInput.spellcheck = false;
 
-        infoInput.style.outlineWidth = "0";
-        infoInput.style.border = "none";
-        infoInput.style.borderWidth = "0";
-        infoInput.style.borderRadius = "0";
-        infoInput.style.boxShadow = "none";
-        infoInput.style.textShadow = "none";
-        infoInput.style.backgroundColor = "#656161";
-        infoInput.style.color = "#e2e2e2";
-        infoInput.style.paddingRight = "0";
-        infoInput.style.display = "inline-block";
-        infoInput.style.boxSizing = "initial";
+        valueInput.style.outlineWidth = "0";
+        valueInput.style.border = "none";
+        valueInput.style.borderWidth = "0";
+        valueInput.style.borderRadius = "0";
+        valueInput.style.boxShadow = "none";
+        valueInput.style.textShadow = "none";
+        valueInput.style.backgroundColor = "#656161";
+        valueInput.style.color = "#e2e2e2";
+        valueInput.style.paddingRight = "0";
+        valueInput.style.display = "inline-block";
+        valueInput.style.boxSizing = "initial";
+
+        let oldValues = [];
+        valueInput.addEventListener("focus", () => oldValues.push(valueInput.value));
+        valueInput.addEventListener("blur", () => {
+            let value = accessor.value = valueInput.value;
+
+            //if value didn't change, remove oldValue from 'history'
+            if (oldValues[oldValues.length - 1] === value) {
+                oldValues.pop();
+            }
+        });
 
         const button = document.createElement("button");
         button.innerText = "$";
@@ -42,7 +53,6 @@ const OverWatch = (function () {
         button.style.borderRadius = "0";
         button.style.boxSizing = "initial";
         button.style.lineHeight = "initial";
-        button.style.color = "white";
 
         button.addEventListener("mouseenter", () => (button.style.backgroundColor = "white") && (button.style.color = "black"));
         button.addEventListener("mouseleave", () => (button.style.backgroundColor = "#4d4949") && (button.style.color = "white"));
@@ -56,7 +66,7 @@ const OverWatch = (function () {
 
         container.appendChild(identifier);
         container.appendChild(button);
-        container.appendChild(infoInput);
+        container.appendChild(valueInput);
 
         parent.appendChild(container);
 
@@ -69,7 +79,7 @@ const OverWatch = (function () {
 
 
             set value(txt) {
-                text = infoInput.value = txt || "";
+                text = valueInput.value = txt || "";
             },
 
             resize(factor) {
@@ -80,12 +90,12 @@ const OverWatch = (function () {
 
                 identifier.style.width = `${52 / factor}px`;
 
-                infoInput.style.fontSize = `${12 / factor}px`;
-                infoInput.style.width = `${150 / factor}px`;
-                infoInput.style.height = `${20 / factor}px`;
-                infoInput.style.paddingLeft = `${2 / factor}px`;
-                infoInput.style.paddingTop = `${1 / factor}px`;
-                infoInput.style.paddingBottom = `${1 / factor}px`;
+                valueInput.style.fontSize = `${12 / factor}px`;
+                valueInput.style.width = `${150 / factor}px`;
+                valueInput.style.height = `${20 / factor}px`;
+                valueInput.style.paddingLeft = `${2 / factor}px`;
+                valueInput.style.paddingTop = `${1 / factor}px`;
+                valueInput.style.paddingBottom = `${1 / factor}px`;
 
                 button.style.margin = `${4 / factor}px ${5 / factor}px`;
                 button.style.padding = `0 ${5 / factor}px`;
@@ -96,22 +106,172 @@ const OverWatch = (function () {
 
             remove() {
                 container.parentElement && container.parentElement.removeChild(container);
+            },
+
+            reset() {
+                oldValues.length = 0;
+            },
+
+            history() {
+                return [...oldValues];
             }
         };
         return accessor;
     }
 
     function createItem(container = popup.node) {
-        let intermediateContainer = document.createElement("div");
-        container.appendChild(intermediateContainer);
+        let itemContainer = document.createElement("div");
+        container.appendChild(itemContainer);
 
-        intermediateContainer.style.boxSizing = "initial";
+        itemContainer.style.boxSizing = "initial";
 
-        let name = addInfo("Name", intermediateContainer);
-        let volume = addInfo("Volume", intermediateContainer);
-        let chapter = addInfo("Episode", intermediateContainer);
+        let name = addInfo("Name", itemContainer);
+        let volume = addInfo("Volume", itemContainer);
+        let chapter = addInfo("Episode", itemContainer);
 
-        return {
+        let value;
+        let previousFilter;
+        let previousBorder;
+        let highlighting;
+
+        function highlight() {
+            highlighting = true;
+
+            previousFilter = value.ancestor.style.filter;
+            previousBorder = value.ancestor.style.border;
+
+            value.ancestor.style.border = "5px solid gray";
+
+            let filter = window.getComputedStyle(value.ancestor).filter;
+            let brightnessReg = /brightness\((\d+)(%?)\)/;
+
+            let brightness = "50%";
+
+            let previousBrightness;
+            if (previousBrightness = filter.match(brightnessReg)) {
+                brightness = (previousBrightness[1] / 2) + previousBrightness[2];
+            }
+
+            let newBrightness = `brightness(${brightness})`;
+
+            //stay minimal invasive, replace available brightness filter with own
+            //but let other filter as they are
+            if (previousFilter) {
+                let currentBrightness;
+
+                if (currentBrightness = brightnessReg.exec(previousFilter)) {
+                    //make value of ancestor darker
+                    value.ancestor.style.filter = previousFilter.replace(currentBrightness[0], newBrightness);
+                } else {
+                    //make value of ancestor darker
+                    value.ancestor.style.filter = previousFilter + " " + newBrightness;
+                }
+            } else {
+                //make value of ancestor darker
+                value.ancestor.style.filter = newBrightness;
+            }
+        }
+
+
+        //highlight element of value by darkening its brightness
+        itemContainer.addEventListener("mouseenter", () => {
+            if (!value) {
+                return;
+            }
+            highlight();
+        });
+
+        function stopHighlight() {
+            highlighting = false;
+            value.ancestor.style.filter = previousFilter;
+            value.ancestor.style.border = previousBorder;
+        }
+
+        itemContainer.addEventListener("mouseleave", () => {
+            if (!value) {
+                return;
+            }
+            stopHighlight();
+        });
+
+        const rejectButton = document.createElement("button");
+        rejectButton.style.transitionDuration = "0.4s";
+        rejectButton.style.border = "none";
+        rejectButton.style.color = "white";
+        rejectButton.style.textAlign = "center";
+        rejectButton.style.textDecoration = "none";
+        rejectButton.style.display = "inline-block";
+        rejectButton.style.cursor = "pointer";
+        rejectButton.style.backgroundColor = "rgb(77, 73, 73)";
+        rejectButton.style.textShadow = "none";
+        rejectButton.style.boxShadow = "none";
+        rejectButton.style.borderRadius = "0";
+        rejectButton.style.boxSizing = "initial";
+        rejectButton.style.lineHeight = "initial";
+        rejectButton.style.padding = "0px";
+
+        itemContainer.appendChild(rejectButton);
+
+        rejectButton.addEventListener(
+            "mouseenter",
+            () => (rejectButton.style.backgroundColor = "white") && (rejectButton.style.color = "black")
+        );
+        rejectButton.addEventListener(
+            "mouseleave",
+            () => (rejectButton.style.backgroundColor = "#4d4949") && (rejectButton.style.color = "white")
+        );
+
+        //send message to background that user rejected this result
+        //and remove this item and evtl. the popup too if it is empty
+        rejectButton.addEventListener("click", () => {
+            //remove value and untrack
+            if (value) {
+                sendResult(value, false);
+
+                if (Array.isArray(result)) {
+                    let index = result.indexOf(value);
+
+                    if (index >= 0) {
+                        result.splice(index, 1);
+                    }
+                } else if (result === value) {
+                    result = undefined;
+                }
+
+                ResultTracker.unTrack(value);
+            }
+            item.remove();
+
+            if (Array.isArray(display)) {
+                let index = display.indexOf(item);
+
+                if (index >= 0) {
+                    display.splice(index, 1);
+                }
+            }
+
+            if (!popup.node.childNodes.length) {
+                popup.removePopup();
+            }
+        });
+        rejectButton.innerText = "Reject";
+
+        itemContainer.addEventListener("click", evt => {
+            //target needs to be an element
+            let tag = evt.target.tagName.toLowerCase();
+
+            if (tag === "input" || tag === "button") {
+                return;
+            }
+            if (highlighting) {
+                stopHighlight();
+            } else {
+                highlight();
+            }
+        });
+
+
+        let item = {
             name: name,
             volume: volume,
             chapter: chapter,
@@ -121,32 +281,46 @@ const OverWatch = (function () {
                 this.chapter.resize(factor);
                 this.volume.resize(factor);
 
-                intermediateContainer.style.height = `${100 / factor}px`;
-                intermediateContainer.style.width = `${250 / factor}px`;
+                rejectButton.style.margin = `${4 / factor}px ${4 / factor}px`;
+                rejectButton.style.fontSize = `${10 / factor}px`;
+                rejectButton.style.height = `${15 / factor}px`;
+                rejectButton.style.width = `${52 / factor}px`;
+
+                itemContainer.style.height = `${120 / factor}px`;
+                itemContainer.style.width = `${250 / factor}px`;
             },
 
             even() {
-                intermediateContainer.style.backgroundColor = "#8c8c8c";
+                itemContainer.style.backgroundColor = "#8c8c8c";
             },
 
             odd() {
-                intermediateContainer.style.backgroundColor = "#777777";
+                itemContainer.style.backgroundColor = "#777777";
             },
 
             remove() {
-                popup.removeChild(intermediateContainer)
+                popup.removeChild(itemContainer)
             },
+
+            setData(data) {
+                value = data;
+
+                this.volume.value = data.volume;
+                this.chapter.value = data.chapter;
+                this.name.value = data.novel;
+
+                if (!itemContainer.parentElement) {
+                    popup.node.appendChild(itemContainer);
+                }
+            },
+
+            stopHighlight
         };
+        return item;
     }
 
     function displayResult(newResult) {
         let newIsArray = Array.isArray(newResult);
-
-        function setDisplayValues(displayItem, item) {
-            displayItem.volume.value = item.volume;
-            displayItem.chapter.value = item.chapter;
-            displayItem.name.value = item.novel;
-        }
 
         function adjustItemSize() {
             let sizeDifference = popup.node.childNodes.length - newResult.length;
@@ -181,18 +355,20 @@ const OverWatch = (function () {
 
                 //set values of items
                 for (let i = 0; i < newResult.length; i++) {
-                    setDisplayValues(display[i], newResult[i]);
+                    display[i].setData(newResult[i])
                 }
             } else {
                 //old Value was an array, now its a single
                 //change from multi to single mode
                 let deleteLength = display.length - 1;
+
                 for (let i = 0; i < deleteLength; i++) {
                     display.shift().remove();
                 }
+
                 display = display[0];
                 display.even();
-                setDisplayValues(display, newResult);
+                display.setData(newResult);
             }
         } else if (newIsArray) {
             display = [display];
@@ -200,11 +376,11 @@ const OverWatch = (function () {
 
             //set values of items
             for (let i = 0; i < newResult.length; i++) {
-                setDisplayValues(display[i], newResult[i]);
+                display[i].setData(newResult[i]);
             }
         } else {
             //if neither of both are arrays, just set new values
-            setDisplayValues(display, newResult);
+            display.setData(newResult);
         }
         result = newResult;
     }
@@ -215,7 +391,7 @@ const OverWatch = (function () {
         //fadeOut of popup, resets then mouse enters and leaves
         let fadeOutInterval;
 
-        popupNode.className = "enterprise-popup";
+        popupNode.className = internalPopupClass;
 
         popupNode.style.position = "fixed";
         popupNode.style.overflowY = "auto";
@@ -248,17 +424,17 @@ const OverWatch = (function () {
             },
 
             hidePopup() {
-                showing = false;
-                popupNode.parentElement && popupNode.parentElement.removeChild(popupNode);
-                clearInterval(fadeOutInterval);
+                popup.removePopup();
+                sendResult(result);
+            },
 
-                sendMessage({
-                    overWatch: {
-                        result: packageResult(result),
-                        url: document.location.href,
-                    }
-                }).catch(error => console.log(error))
-                    .then(() => console.log("message send"));
+            removePopup() {
+                clearInterval(fadeOutInterval);
+                showing = false;
+                if (display) {
+                    singleMultiAction(display, value => value.stopHighlight());
+                }
+                popupNode.parentElement && popupNode.parentElement.removeChild(popupNode);
             },
 
             fadeOut() {
@@ -276,10 +452,28 @@ const OverWatch = (function () {
                 popupNode.style.bottom = `${20 / factor}px`;
                 popupNode.style.padding = `${5 / factor}px`;
                 popupNode.style.width = `${250 / factor}px`;
-                popupNode.style.height = `${100 / factor}px`;
+                popupNode.style.height = `${120 / factor}px`;
             },
         }
     })();
+
+    function sendResult(result, accept = true) {
+        if (!result) {
+            return;
+        }
+        sendMessage({
+            overWatch: {
+                result: packageResult(result),
+                accept: accept,
+                url: document.location.href,
+            }
+        }).catch(error => console.log(error))
+            .then(() => console.log("message send"));
+
+        if (!accept) {
+
+        }
+    }
 
     //if there is a textProcessor('selectText'), get the clicked text and inject it in textProcessor
     window.addEventListener("click", evt => {
@@ -342,20 +536,14 @@ const OverWatch = (function () {
 
         popup.resize(ratio);
 
-        if (Array.isArray(display)) {
-            for (let item of display) {
-                item.resize(ratio);
-            }
-        } else {
-            display.resize(ratio);
-        }
+        singleMultiAction(display, value => value.resize(ratio));
     }, 100);
 
     /**
      *
      * @param {Array<{trackAble: Result, progress: number}>} progressed
      */
-    ProgressChecker.onProgress = progressed => {
+    ResultTracker.onProgress = progressed => {
         let progress = progressed.map(value => {
             let {trackAble, progress} = value;
 
@@ -387,7 +575,7 @@ const OverWatch = (function () {
                 return "no meta";
             }
 
-            ProgressChecker.track(metaResults);
+            ResultTracker.track(metaResults);
 
             displayResult(metaResults);
 

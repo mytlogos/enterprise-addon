@@ -1,4 +1,4 @@
-const ProgressChecker = {
+const ResultTracker = {
     seen() {
     },
 

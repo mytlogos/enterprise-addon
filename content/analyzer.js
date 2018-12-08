@@ -23,6 +23,8 @@ const Analyzer = {
             return
         }
         this.running = true;
+        this.elementCount = 0;
+        this.bodyCount = 0;
 
         //run the scoring algorithm
         let candidates = this.initialize(document);
@@ -33,7 +35,6 @@ const Analyzer = {
         this.cleanDom();
         this.running = false;
         return main;
-        //todo ask what should be expected if this is not the first time sth of this "series"
     },
 
     cleanDom() {
@@ -97,8 +98,6 @@ const Analyzer = {
         return element.enterprise.tag === "img";
     },
 
-    elementCount: 0,
-
     /**
      *
      * @param {HTMLElement} element
@@ -160,8 +159,6 @@ const Analyzer = {
     _getCharCount(text) {
         return (text.match(this.REGEXPS.contentChars) || []).length;
     },
-
-    bodyCount: 0,
 
     /**
      * Add the scores to the elements and their parents
@@ -494,7 +491,6 @@ const Analyzer = {
             return false;
         }
         let opacity = window.getComputedStyle(element).opacity;
-        //fixme for now i am gonna just ignore the out of window position thing
         return parseFloat(opacity) !== 0;
     },
 
@@ -995,20 +991,6 @@ const TypeFilterMatcher = (function generateTypeFilterMap() {
         }
     };
 })();
-
-/**
- *
- * Returns the a generator, which generates
- * a sequence of numbers.
- *
- * @return {IterableIterator<number>}
- */
-function* idGenerator() {
-    let id = 1;
-    while (true) {
-        yield id++;
-    }
-}
 
 /**
  * Css Selector Factory copied (and modified to Elements instead of node)

@@ -42,7 +42,19 @@ function sendMessage(message, dev) {
     }
 }
 
-//fixme: if dom ever changes, this is not valid anymore
+const internalPopupClass = "enterprise-popup";
+
+function isInternalPopup(node) {
+    while (node) {
+        if (node.className === internalPopupClass) {
+            return true;
+        }
+        node = node.parentElement;
+    }
+    return false;
+}
+
+
 /**
  * Annotates each node with their current positions
  * in the node- & element hierarchy.
@@ -105,25 +117,9 @@ let Ready = (function annotateDOM() {
         }
     }
 
-    const internalPopupClass = "enterprise-popup";
-
-    function isInternalPopup(node) {
-        while (node) {
-            if (node.className === internalPopupClass) {
-                return true;
-            }
-            node = node.parentElement;
-        }
-        return false;
-    }
-
     const domObserver = new MutationObserver(records => {
-        //find a record where the dom tree was manipulated,  but not by this extension itself
-        let record = records.find(value =>
-            value.addedNodes.length
-            && !findLikeArray(value.addedNodes, isInternalPopup)
-            || value.removedNodes.length
-            && !findLikeArray(value.removedNodes, isInternalPopup));
+        //find a record where the nodes where added, but not by this extension itself
+        let record = records.find(value => value.addedNodes.length && !findLikeArray(value.addedNodes, isInternalPopup));
 
         //if dom is still the same, return
         if (!record) {
@@ -268,4 +264,28 @@ function findLikeArray(arrayLike, findCallback) {
 function isAncestor(node, ancestor) {
     const nodePositions = node.nodePosition;
     return ancestor.nodePosition.every((value, index) => nodePositions[index] === value);
+}
+
+function singleMultiAction(value, action) {
+    if (Array.isArray(value)) {
+        for (let item of value) {
+            action(item);
+        }
+    } else {
+        action(value);
+    }
+}
+
+/**
+ *
+ * Returns the a generator, which generates
+ * a sequence of numbers.
+ *
+ * @return {IterableIterator<number>}
+ */
+function* idGenerator() {
+    let id = 1;
+    while (true) {
+        yield id++;
+    }
 }
