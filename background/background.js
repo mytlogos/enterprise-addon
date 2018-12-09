@@ -1,9 +1,27 @@
-const unknown = "unknown";
-
+// noinspection JSValidateTypes
+/**
+ * User object, which saves the current session.
+ *
+ * @type {{
+ * name: string,
+ * session: string,
+ * uuid: string,
+ * loggedIn: boolean,
+ * setName(string): this,
+ * setId(string): this,
+ * setSession(string): this,
+ * clear(): this
+ * addListener(string, function): void
+ * }}
+ */
 const user = Observable({
     name: "",
     session: "",
     uuid: "",
+
+    get loggedIn() {
+        return Boolean(this.session);
+    },
 
     /**
      *
@@ -43,9 +61,9 @@ const user = Observable({
      * @return {this}
      */
     clear() {
-        this.session = "";
         this.uuid = "";
         this.name = "";
+        this.session = "";
         return this;
     }
 });
@@ -109,7 +127,7 @@ class PageWrapper {
         }
 
         this.analyzed = true;
-        console.log("starting analyzer for " + this.host);
+        console.log("starting overWatch for " + this.host);
         this.sendMessage({start: true}).catch(error => console.log(`error starting analyzer: ${error}`))
     }
 
@@ -123,7 +141,6 @@ class PageWrapper {
      * @return {void}
      */
     changeState(newState) {
-
         //Change the state of this extension for a given page, followed by a change of browser action icon
         ExtensionManager.displayState(newState)
             .catch(error => console.log("icon error " + error))
@@ -282,12 +299,16 @@ const ExtensionManager = {
      * @return {Promise<*>}
      */
     processPopupMsg(msg) {
+        if (msg.loggedIn) {
+            return Promise.resolve(user.loggedIn);
+        }
+
         if (msg.state) {
             //default response is false
             let responseState = false;
 
             //only check if user is logged in, else return for everything false
-            if (HttpClient.loggedIn && states.any(msg.state) && this.selected) {
+            if (user.loggedIn && states.any(msg.state) && this.selected) {
                 //if there is a selected wrapper, accept with true
                 this.currentActive = msg.state;
                 responseState = true;
@@ -309,11 +330,15 @@ const ExtensionManager = {
         if (msg.user) {
             return Promise.resolve({name: user.name});
         }
+
+        if (msg.logout) {
+            UserSystem.logOut();
+        }
     },
 
     /**
      *
-     * @param {Tab} senderTab
+     * @param {browser.tabs.Tab} senderTab
      * @param {Object} msg
      */
     processDevMsg(senderTab, msg) {
@@ -360,14 +385,139 @@ const ExtensionManager = {
      * @param {browser.tabs.Tab} senderTab
      */
     processOverWatch(result, senderTab) {
-        let wrapper = this.getWrapper(senderTab.id);
+        ifLoggedIn(() => {
+            let wrapper = this.getWrapper(senderTab.id);
 
-        if (!wrapper) {
-            throw Error(`no wrapper found for '${senderTab.id}'`)
+            if (!wrapper) {
+                throw Error(`no wrapper found for '${senderTab.id}'`)
+            }
+
+            result.contentSession = wrapper.wrapperId;
+            UserSystem.pushMessage(result);
+        }).catch(console.log);
+    },
+
+    tabsUpdated(tabId, changeInfo) {
+        let host = ExtensionManager.getHost(changeInfo.url);
+
+        if (!changeInfo.favIconUrl) {
+            console.log(tabId, changeInfo);
         }
 
-        result.contentSession = wrapper.wrapperId;
-        UserSystem.pushMessage(result);
+        //check if url was updated
+        if (!host) {
+            return
+        }
+
+        //don't listen to extensionPage
+        if (this.isExtensionUrl(changeInfo.url)) {
+            return;
+        }
+
+        //create a new wrapper for this page only if user is logged in
+        ifLoggedIn(() => {
+            let wrapper = this.createWrapper(host, changeInfo.url, tabId);
+            //init the wrapper
+            wrapper.init().catch(error => console.log(`initiating wrapper failed: ${error}`));
+
+            //if active page is reloaded, set new wrapper as selected
+            let previousWrapper = this.getWrapper(tabId);
+
+            if (this.selected === previousWrapper) {
+                this.selected = wrapper;
+            }
+
+            //save wrapper with tabId
+            this.tabs.set(tabId, wrapper);
+        })  //print any errors that could have happened to console
+            .catch(console.log);
+    },
+
+    tabActivated(activeInfo) {
+        ifLoggedIn(() => {
+            browser.tabs
+                .get(activeInfo.tabId)
+                .then(tab => {
+                    //check if an wrapper with this tabId is available
+                    let wrapper = this.getWrapper(tab.id);
+
+                    //check if that wrapper has the same url as the tab has now, else create a new wrapper
+                    if (wrapper && tab.url === wrapper.url) {
+                        this.selected = wrapper;
+                        this.displayState().catch(console.log);
+                    } else {
+                        let host = this.getHost(tab);
+                        //if there is no valid host, reset selected and return
+                        if (!host) {
+                            this.selected = undefined;
+                            this.displayState().catch(console.log);
+                            return
+                        }
+                        //create a new page wrapper
+                        this.selected = this.createWrapper(host, tab.url, tab.id);
+                        //replace any previous wrapper for this tab
+                        this.tabs.set(tab.id, this.selected);
+                        return this.selected.init();
+                    }
+                })
+                .catch(error => console.log(`error while setting selected page wrapper ${error}`));
+        }).catch(console.log)
+
+    },
+
+    messageHandler(msg, sender) {
+        //ignore message that are not send from this extension
+        if (sender.id !== browser.runtime.id) {
+            return;
+        }
+        console.log(msg, sender);
+
+        //state message come from browserAction popup
+        if (msg.popup) {
+            try {
+                return this.processPopupMsg(msg.popup);
+            } catch (e) {
+                console.log(e);
+            }
+        }
+
+        //result and progress messages coming from overWatch.js
+        if (msg.overWatch && sender && sender.tab) {
+            try {
+                this.processOverWatch(msg.overWatch, sender.tab);
+            } catch (e) {
+                console.log(e);
+            }
+        }
+
+        //message from contentScript (analyzer) to devTool
+        if (msg.dev && sender && sender.tab) {
+            try {
+                this.processDevMsg(sender.tab, msg);
+            } catch (e) {
+                console.log(e);
+            }
+        }
+
+    },
+
+    handlePortConnect(port) {
+        if (port.name === "dev") {
+            this.devPorts.add(port);
+
+            port.onMessage.addListener(msg => {
+                if (msg.id && msg.msg) {
+                    if (!port.id) {
+                        //ready 'flasher' for mouseOver events
+                        this.getWrapper(msg.id).executeScript("animator/flasher.js");
+                    }
+                    port.id = msg.id;
+                    this.getWrapper(msg.id).sendMessage(msg.msg).catch(error => console.log("message error", error));
+                }
+            });
+
+            port.onDisconnect.addListener(() => this.devPorts.delete(port));
+        }
     },
 
     /**
@@ -379,131 +529,19 @@ const ExtensionManager = {
      */
     initListener() {
         //react to url changes in tabs, create a new wrapper each time the url changes, even if it reloads
-        browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
-            let host = ExtensionManager.getHost(changeInfo.url);
-
-            if (!changeInfo.favIconUrl) {
-                console.log(tabId, changeInfo);
-            }
-
-            //check if url was updated
-            if (!host) {
-                return
-            }
-
-            //don't listen to extensionPage
-            if (this.isExtensionUrl(changeInfo.url)) {
-                return;
-            }
-
-            //create a new wrapper for this page only if user is logged in
-            ifLoggedIn(() => {
-                let wrapper = this.createWrapper(host, changeInfo.url, tabId);
-                //init the wrapper
-                wrapper.init().catch(error => console.log(`initiating wrapper failed: ${error}`));
-
-                //if active page is reloaded, set new wrapper as selected
-                let previousWrapper = this.getWrapper(tabId);
-
-                if (this.selected === previousWrapper) {
-                    this.selected = wrapper;
-                }
-
-                //save wrapper with tabId
-                this.tabs.set(tabId, wrapper);
-            })  //print any errors that could have happened to console
-                .catch(console.log);
-        });
+        browser.tabs.onUpdated.addListener((tabId, changeInfo) => this.tabsUpdated(tabId, changeInfo));
 
         //set the selected tab, there can be only one
-        browser.tabs.onActivated.addListener(activeInfo => {
-            ifLoggedIn(() => {
-                browser.tabs
-                    .get(activeInfo.tabId)
-                    .then(tab => {
-                        //check if an wrapper with this tabId is available
-                        let wrapper = this.getWrapper(tab.id);
-
-                        //check if that wrapper has the same url as the tab has now, else create a new wrapper
-                        if (wrapper && tab.url === wrapper.url) {
-                            this.selected = wrapper;
-                            this.displayState().catch(console.log);
-                        } else {
-                            let host = this.getHost(tab);
-                            //if there is no valid host, reset selected and return
-                            if (!host) {
-                                this.selected = undefined;
-                                this.displayState().catch(console.log);
-                                return
-                            }
-                            //create a new page wrapper
-                            this.selected = this.createWrapper(host, tab.url, tab.id);
-                            //replace any previous wrapper for this tab
-                            this.tabs.set(tab.id, this.selected);
-                            return this.selected.init();
-                        }
-                    })
-                    .catch(error => console.log(`error while setting selected page wrapper ${error}`));
-            }).catch(console.log)
-        });
+        browser.tabs.onActivated.addListener(activeInfo => this.tabActivated(activeInfo));
 
         //removes any wrapper with the given tabId
         browser.tabs.onRemoved.addListener(tabId => this.removeWrapper(tabId));
 
         //reacts to messages from content scripts of pages or the browserAction
-        browser.runtime.onMessage.addListener((msg, sender) => {
-            //ignore message that are not send from this extension
-            if (sender.id !== browser.runtime.id) {
-                return;
-            }
-            console.log(msg, sender);
+        browser.runtime.onMessage.addListener((msg, sender) => this.messageHandler(msg, sender));
 
-            //state message come from browserAction popup
-            if (msg.popup) {
-                try {
-                    return this.processPopupMsg(msg.popup);
-                } catch (e) {
-                    console.log(e);
-                }
-            }
-
-            //result and progress messages coming from overWatch.js
-            if (msg.overWatch && sender && sender.tab) {
-                try {
-                    this.processOverWatch(msg.overWatch, sender.tab);
-                } catch (e) {
-                    console.log(e);
-                }
-            }
-
-            //message from contentScript (analyzer) to devTool
-            if (msg.dev && sender && sender.tab) {
-                try {
-                    this.processDevMsg(sender.tab, msg);
-                } catch (e) {
-                    console.log(e);
-                }
-            }
-        });
-
-        browser.runtime.onConnect.addListener(port => {
-            if (port.name === "dev") {
-                this.devPorts.add(port);
-
-                port.onMessage.addListener(msg => {
-                    if (msg.id && msg.msg) {
-                        if (!port.id) {
-                            //ready 'flasher' for mouseOver events
-                            this.getWrapper(msg.id).executeScript("animator/flasher.js");
-                        }
-                        port.id = msg.id;
-                        this.getWrapper(msg.id).sendMessage(msg.msg).catch(error => console.log("message error", error));
-                    }
-                });
-
-                port.onDisconnect.addListener(() => this.devPorts.delete(port));
-            }
-        });
+        //handle connect request, at the moment only from devTool
+        browser.runtime.onConnect.addListener(port => this.handlePortConnect(port));
     },
 
     /**
@@ -554,14 +592,56 @@ const nextWrapperId = (function () {
     return () => current++;
 });
 
+//ask initially for login status
+UserSystem
+    .loggedIn()
+    .then(loggedIn => {
+        if (!loggedIn) {
+            return StoreManager.deleteUser();
+        }
+    })
+    .catch(error => {
+        if (!UserSystem.offline) {
+            return Promise.reject(error);
+        }
+
+        return StoreManager
+            .readUser()
+            .then(offlineUser => {
+                if (!offlineUser) {
+                    return;
+                }
+                if (offlineUser.session && offlineUser.name && offlineUser.uuid) {
+                    user.setId(offlineUser.uuid);
+                    user.setName(offlineUser.name);
+                    user.setSession(offlineUser.session);
+                }
+            })
+            .then(() => Promise.reject(error));
+    })
+    .finally(() => {
+        //listen to session changes, to write or
+        //delete the offlineUser and clean or start up
+        user.addListener("session", async (oldValue, newValue) => {
+            if (newValue) {
+                let cache = await StoreManager.readMessageCache();
+                let offlineUser = await StoreManager.readUser();
+
+                if (offlineUser.uuid === user.uuid && Array.isArray(cache)) {
+                    UserSystem.messageCache.push(...cache);
+                }
+                //setup webSocket client to server
+                await StoreManager.writeUser(user);
+                UserSystem.activatePush();
+            } else {
+                StoreManager
+                    .deleteUser()
+                    .finally(() => UserSystem.finish());
+            }
+        });
+    });
 //initiate all listener that are relevant for the extensionManager
 ExtensionManager.initListener();
-//ask initially for login status
-UserSystem.loggedIn();
-
-browser.browserAction
-    .setPopup({popup: "../ui/popupProducer.html"})
-    .catch(error => console.log("could not set popup: ", error));
 
 /**
  * Executes callbacks depending on whether a user is logged in or not.
@@ -573,7 +653,7 @@ browser.browserAction
  */
 function ifLoggedIn(cbTrue, cbFalse) {
     return new Promise(resolve => {
-        if (HttpClient.loggedIn) {
+        if (user.loggedIn) {
             resolve(cbTrue());
         }
         if (typeof cbFalse === "function") {
@@ -582,35 +662,8 @@ function ifLoggedIn(cbTrue, cbFalse) {
     });
 }
 
-/**
- * Function to add an listener for session changes for
- * everything that has access to the background page.
- * (especially popupProducer.js)
- *
- * @param {function} listener
- */
-function addLoginListener(listener) {
-    user.addListener("session", listener);
-}
-
-function returnMessage(promise) {
-
-}
-
 function validateString(value) {
     if (!(value && (typeof value === 'string' || value instanceof String))) {
         throw Error(`'${value}' is no valid string input`);
     }
-}
-
-function logLocal(key) {
-    log(browser.storage.local.get(key))
-}
-
-function log(promise) {
-    promise.then(console.log)
-}
-
-function cD() {
-    log(UserSystem.getUuid().then(uid => StoreManager.read(uid)))
 }

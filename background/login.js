@@ -2,14 +2,13 @@
  *
  */
 const UserSystem = {
-
     //todo ask server with password and mail for token, validate token?
     //todo client side encryption?
-
     onUpdate: undefined,
     onData: undefined,
     on_login: undefined,
     onLogout: undefined,
+    messageCache: [],
 
     /***
      * Checks whether a user is currently logged in the extension in this browser.
@@ -18,19 +17,11 @@ const UserSystem = {
      * @return Promise<boolean>
      */
     loggedIn() {
-        //check if the cache is set
-        return HttpClient
-            .isLoggedIn()
-            //save login
-            .then(user => {
-                if (!user) {
-                    return false;
-                }
-                return StoreManager
-                    .write(StoreManager.active_user, user)
-                    //setup webSocket client to server
-                    .then(() => this.activatePush())
-            });
+        return HttpClient.isLoggedIn();
+    },
+
+    get offline() {
+        return HttpClient.offline;
     },
 
     /**
@@ -52,12 +43,7 @@ const UserSystem = {
         if (!name || !pw) {
             return Promise.reject("invalid credentials");
         }
-        return HttpClient
-            .register(name, pw, pwRepeat)
-            //save login
-            .then(user => StoreManager.write(StoreManager.active_user, user))
-            //setup webSocket client to server
-            .then(() => this.activatePush());
+        return HttpClient.register(name, pw, pwRepeat)
     },
 
     /***
@@ -81,12 +67,7 @@ const UserSystem = {
         if (!name || !pw) {
             return Promise.reject("invalid credentials");
         }
-        return HttpClient
-            .login(name, pw)
-            //save login
-            .then(user => StoreManager.write(StoreManager.active_user, user))
-            //setup webSocket client to server
-            .then(() => this.activatePush());
+        return HttpClient.login(name, pw)
     },
 
 
@@ -98,27 +79,23 @@ const UserSystem = {
      * else logs out all clients of the current account.
      *
      * @param {boolean} all
-     * @return {Promise<void>}
+     * @return void
      */
     logOut(all = false) {
-        //todo do it over webSocket or over rest api?
         let message = {};
         message[events.LOGOUT] = {all};
-        //if logout from client side
-        return StoreManager.delete(StoreManager.active_user)
-            .then(() => WSClient.push(message))
-            .then(() => WSClient.close());
+        this.pushMessage(message);
+        user.clear();
     },
 
     /***
      * Reads the uid of current user or rejects if there is  none.
      *
-     * @return {Promise<string>}
+     * @return {Promise<string|void>}
      */
     getUuid() {
         return StoreManager
-            .read(StoreManager.active_user)
-            //reject if uid is not available
+            .readUser()
             .then(user => user && user.uuid);
     },
 
@@ -129,12 +106,29 @@ const UserSystem = {
      * @return {Promise<void>}
      */
     activatePush() {
-        return WSClient.startPush();
+        return WSClient
+            .startPush()
+            //if there are cached messages, send them to server
+            .then(() => {
+                this.messageCache.forEach(message => WSClient.push(message));
+                this.messageCache.length = 0;
+                return StoreManager.deleteMessageCache();
+            });
     },
 
+    /**
+     * Push a message to the server.
+     *
+     * @param {Object} message json valid object
+     */
     pushMessage(message) {
-        if (user.session) {
-            WSClient.push(message);
+        if (user.loggedIn) {
+            if (HttpClient.offline || WSClient.closed()) {
+                this.messageCache.push(message);
+                StoreManager.writeMessageCache(this.messageCache);
+            } else {
+                WSClient.push(message);
+            }
         }
     },
 
@@ -206,10 +200,9 @@ WSClient.addEventListener(events.UPDATE, event => {
         UserSystem.onUpdate(event.detail);
     }
 });
-//set loggedInCache to false on logout from server side and execute callback
+//delete offlineUser on logout from server side and execute callback
 WSClient.addEventListener(events.LOGOUT, () => {
-    StoreManager.delete(StoreManager.active_user);
-    WSClient.loggedInCache = false;
+    StoreManager.deleteUser();
 
     if (typeof (UserSystem.onLogout) === "function") {
         UserSystem.onLogout(event.detail);
@@ -219,7 +212,7 @@ WSClient.addEventListener(events.LOGOUT, () => {
 //query the server every 10s if a user session exists for this device
 setInterval(() => {
     try {
-        if (!user.session) {
+        if (!user.loggedIn) {
             UserSystem.loggedIn().catch(console.log);
         }
     } catch (e) {

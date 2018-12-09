@@ -47,6 +47,7 @@
       "48": "img/ext_icon_inactive_48.png",
       "32": "img/ext_icon_inactive_32.png"
     },
-    "default_title": "Enterprise"
+    "default_title": "Enterprise",
+    "default_popup": "ui/popupProducer.html"
   }
 }
