@@ -1,4 +1,4 @@
-const ProgressChecker = (function () {
+const ResultTracker = (function () {
     function isElementInViewport(el) {
         let rect = el.getBoundingClientRect();
 
@@ -233,7 +233,7 @@ attributeFilter: ["class"]
 
     setInterval(() => {
         try {
-            let seeAbles = trackAbles.filter(value => value.seeAble);
+            let seeAbles = trackAbles.filter(value => value.seeAble && !value.durationAble);
             let durationAbles = trackAbles.filter(value => value.durationAble);
 
             seenProgress(seeAbles);
@@ -257,6 +257,11 @@ attributeFilter: ["class"]
         }
     }, 300);
 
+    const nextId = (function nextId() {
+        const nextIdGenerator = idGenerator();
+        return () => nextIdGenerator.next().value;
+    })();
+
     return {
         /**
          *  Checks whether the given HtmlElement
@@ -274,33 +279,32 @@ attributeFilter: ["class"]
          * @param {Result|Array<Result>} toTrack
          */
         track(toTrack) {
-            if (Array.isArray(toTrack)) {
-                trackAbles.push(...toTrack);
-            } else {
-                trackAbles.push(toTrack);
-            }
+            singleMultiAction(toTrack, value => {
+                let previousTrackAble;
+                //if there is a previous trackAble which tracks the same element,
+                //update all values of new trackAble
+                if (previousTrackAble = trackAbles.find(trackAble => trackAble.ancestor === value.ancestor)) {
+                    Object.assign(previousTrackAble, value);
+                    return;
+                }
+                value.resultId = nextId();
+                trackAbles.push(value);
+            });
         },
 
         unTrack(unTrack) {
-            if (Array.isArray(unTrack)) {
-                trackAbles = trackAbles.filter(value => {
-                    if (unTrack.includes(value)) {
-                        trackProgress.delete(value);
-                        return false;
-                    } else {
-                        return true;
-                    }
-                });
-            } else {
-                trackAbles = trackAbles.filter(value => {
-                    if (value === unTrack) {
-                        trackProgress.delete(value);
-                        return false;
-                    } else {
-                        return true;
-                    }
-                });
-            }
+            const deletePredicate = Array.isArray(unTrack)
+                ? value => unTrack.includes(value)
+                : value => value === unTrack;
+
+            trackAbles = trackAbles.filter(value => {
+                if (deletePredicate(value)) {
+                    trackProgress.delete(value);
+                    return false;
+                } else {
+                    return true;
+                }
+            });
         },
 
         /**
