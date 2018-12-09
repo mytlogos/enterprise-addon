@@ -1081,8 +1081,6 @@ function arrayMax(array, comparator = (a, b) => Math.max(a, b)) {
     return array.length && array.reduce(comparator);
 }
 
-window.addEventListener("unload", () => sendMessage({analyzer: false}, true));
-
 /**
  * @typedef {Object} AnalyzeResult
  *

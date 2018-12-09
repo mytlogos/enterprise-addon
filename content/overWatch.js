@@ -417,6 +417,10 @@ const OverWatch = (function () {
                 popupNode.removeChild(child);
             },
 
+            get shown() {
+                return showing;
+            },
+
             showPopup() {
                 document.body.appendChild(popupNode);
                 showing = true;
@@ -480,6 +484,9 @@ const OverWatch = (function () {
         let node = evt.target;
         let ignore = node === popup.node;
 
+        if (!popup.shown || !selectText) {
+            return;
+        }
         if (!ignore) {
             while (node = node.parentElement) {
                 if (ignore = node === popup.node) {
@@ -489,7 +496,7 @@ const OverWatch = (function () {
         }
 
         if (!ignore) {
-            selectText && node.innerText && selectText(node.innerText);
+            node.innerText && selectText(node.innerText);
             selectText = undefined;
             popup.fadeOut();
         }
