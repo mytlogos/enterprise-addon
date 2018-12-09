@@ -12,9 +12,9 @@ frame.addEventListener("load", () => {
     });
 });
 
-
-let loginListener = (oldValue, newValue) => frame.setAttribute("src", newValue ? "loggedInPopup.html" : "loginPopup.html");
-browser.extension.getBackgroundPage().addLoginListener(loginListener);
+browser.runtime
+    .sendMessage({popup: {loggedIn: true}})
+    .then(response => frame.setAttribute("src", response ? "loggedInPopup.html" : "loginPopup.html"));
 
 /**
  *

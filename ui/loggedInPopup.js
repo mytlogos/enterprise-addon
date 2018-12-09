@@ -2,6 +2,7 @@ const active = "active";
 const inactive = "inactive";
 const error = "error";
 const unknown = "unknown";
+
 const active_switch = document.getElementById("active_switch");
 
 active_switch.addEventListener("click", () => {
