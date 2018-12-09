@@ -11,7 +11,7 @@
  * @param {T} target
  * @return {T}
  */
-function Observable(target = {}) {
+ function Observable(target = {}) {
     let listener = new Map();
 
     let proxy = new Proxy(target, {
@@ -97,7 +97,7 @@ function Change(type, start, end, added, removed = []) {
  * @template {T}
  * @extends {Array<T>}
  */
-class ObservableArray extends Array {
+ class ObservableArray extends Array {
 
     constructor() {
         super();
@@ -211,3 +211,4 @@ class ObservableArray extends Array {
         return number;
     }
 }
+

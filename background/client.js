@@ -69,13 +69,24 @@ class Client extends EventTarget {
         }
     }
 
+    /**
+     * Checks whether this WebSocketClient is not usable anymore.
+     *
+     * @return {boolean} - true if closed or closing
+     */
+    closed() {
+        return !this.socket
+            || this.socket.readyState == this.socket.CLOSED
+            || this.socket.readyState === this.socket.CLOSING
+    }
+
     /***
      * Closes the WebSocket and removes it from this client.
      *
      * @return {void}
      */
     close() {
-        this.socket.close();
+        this.socket && this.socket.close();
         this.socket = undefined;
     }
 }
@@ -94,10 +105,6 @@ const Methods = {
 
 const HttpClient = {
 
-    get loggedIn() {
-        return Boolean(user.uuid);
-    },
-
     /**
      *
      * @param {string} uuid
@@ -110,7 +117,7 @@ const HttpClient = {
                 .clear()
                 .setName(name)
                 .setId(uuid)
-                .setSession(session)
+                .setSession(session);
         } catch (e) {
             //in case some error happened while adding new data,
             //clear any rest data and rethrow error
@@ -144,7 +151,7 @@ const HttpClient = {
      */
     login(userName, psw) {
         //need to be logged out to login
-        if (HttpClient.loggedIn) {
+        if (user.loggedIn) {
             return Promise.reject();
         }
 
@@ -177,7 +184,7 @@ const HttpClient = {
      */
     register(userName, psw, psw_repeat) {
         //need to be logged out to login
-        if (HttpClient.loggedIn) {
+        if (user.loggedIn) {
             return Promise.reject("already logged in");
         }
         if (psw !== psw_repeat) {
@@ -234,7 +241,7 @@ const HttpClient = {
      */
     queryServer({query, path = "", method = Methods.get, auth = true} = {}) {
         if (auth) {
-            if (!user.uuid) {
+            if (!user.loggedIn) {
                 throw Error("cannot send user message if no user is logged in")
             }
             if (!query) {
@@ -255,7 +262,8 @@ const HttpClient = {
         }
         //fixme change url to real server address
         return fetch(`http://localhost:3000/api/user/${path}`, init)
-            .then(response => response.json())
+            .catch(error => (this.offline = true) && Promise.reject(error))
+            .then(response => (this.offline = false) && response.json())
             .then(result => {
                 if (result.error) {
                     return Promise.reject(result.error);

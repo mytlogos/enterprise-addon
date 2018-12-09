@@ -1,5 +1,60 @@
 const StoreManager = {
     active_user: "active_user",
+    messageCache: "messageCache",
+
+    /**
+     * Shortcut function for reading user.
+     *
+     * @return {Promise<any>}
+     */
+    readMessageCache() {
+        return this.read(this.messageCache);
+    },
+
+    /**
+     * Shortcut function for saving user.
+     *
+     * @return {Promise<void>}
+     */
+    writeMessageCache(user) {
+        return this.write(this.messageCache, user);
+    },
+
+    /**
+     * Shortcut function for saving user.
+     *
+     * @return {Promise<void>}
+     */
+    deleteMessageCache() {
+        return this.delete(this.messageCache);
+    },
+
+    /**
+     * Shortcut function for reading user.
+     *
+     * @return {Promise<any>}
+     */
+    readUser() {
+        return this.read(this.active_user);
+    },
+
+    /**
+     * Shortcut function for saving user.
+     *
+     * @return {Promise<void>}
+     */
+    writeUser(user) {
+        return this.write(this.active_user, user);
+    },
+
+    /**
+     * Shortcut function for saving user.
+     *
+     * @return {Promise<void>}
+     */
+    deleteUser() {
+        return this.delete(this.active_user);
+    },
 
     /***
      * Reads a value from the storage with a given key.
@@ -46,7 +101,11 @@ const StoreManager = {
         return this.read(key)
             .then(value => {
                 value = value || {};
-                update_fn(value);
+                let newValue = update_fn(value);
+
+                if (newValue) {
+                    return newValue;
+                }
                 return value;
             })
             .then(value => this.write(key, value));
