@@ -1,16 +1,30 @@
 {
   "manifest_version": 2,
-  "name": "Enterprise",
-  "version": "1.0",
+  "name": "Enterprise Extension",
+  "version": "1.1",
   "description": "Does nothing much at the moment.",
   "permissions": [
     "activeTab",
     "storage",
     "unlimitedStorage",
-    "notifications",
+    "bookmarks",
     "tabs",
     "*://*/*"
   ],
+  "commands": {
+    "toggle-activation": {
+      "description": "Activate Extension on the Website in the current open Tab",
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y"
+      }
+    },
+    "mark-finished": {
+      "description": "Mark the the Episode, if associated with the Website of the current Tab, as read",
+      "suggested_key": {
+        "default": "Ctrl+Shift+F"
+      }
+    }
+  },
   "options_ui": {
     "page": "ui/settings.html"
   },
@@ -18,30 +32,13 @@
     "scripts": [
       "external/browser-polyfill.js",
       "background/initializer.js",
-      "background/observable.js",
       "background/storage.js",
       "background/client.js",
       "background/login.js",
-      "background/stub.js",
+      "background/bookmarks.js",
       "background/background.js"
     ]
   },
-  "devtools_page": "animator/animator.html",
-  "content_scripts": [
-    {
-      "matches": [
-        "*://*/*"
-      ],
-      "js": [
-        "external/browser-polyfill.js",
-        "content/initializer.js",
-        "content/analyzer.js",
-        "content/progressCheck.js",
-        "content/metaExtractor.js",
-        "content/overWatch.js"
-      ]
-    }
-  ],
   "browser_action": {
     "default_icon": {
       "48": "img/ext_icon_inactive_48.png",

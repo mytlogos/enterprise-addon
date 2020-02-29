@@ -1,76 +1,13 @@
-// noinspection JSValidateTypes
-/**
- * User object, which saves the current session.
- *
- * @type {{
- * name: string,
- * session: string,
- * uuid: string,
- * loggedIn: boolean,
- * setName(string): this,
- * setId(string): this,
- * setSession(string): this,
- * clear(): this
- * addListener(string, function): void
- * }}
- */
-const user = Observable({
-    name: "",
-    session: "",
-    uuid: "",
-
-    get loggedIn() {
-        return Boolean(this.session);
-    },
-
-    /**
-     *
-     * @param {string} name
-     * @return {this}
-     */
-    setName(name) {
-        validateString(name);
-        this.name = name;
-        return this;
-    },
-
-    /**
-     *
-     * @param {string} uuid
-     * @return {this}
-     */
-    setId(uuid) {
-        validateString(uuid);
-        this.uuid = uuid;
-        return this;
-    },
-
-    /**
-     *
-     * @param {string} session
-     * @return {this}
-     */
-    setSession(session) {
-        validateString(session);
-        this.session = session;
-        return this;
-    },
-
-    /**
-     *
-     * @return {this}
-     */
-    clear() {
-        this.uuid = "";
-        this.name = "";
-        this.session = "";
-        return this;
-    }
-});
-
-
 //todo make a export feature?
 //todo get more into logging
+
+/**
+ * @typedef {"active"|"inactive"|"error"} States
+ */
+/**
+ *
+ * @type {{ACTIVE: string, INACTIVE: string, ERROR: string, any(*): boolean}}
+ */
 const states = {
     ACTIVE: "active",
     INACTIVE: "inactive",
@@ -92,8 +29,14 @@ const states = {
 };
 
 /**
- * A Wrapper for a given Page.
+ *  * A Wrapper for a given Page.
  * Contains the tabId the page sits in, the activation state for the
+ *
+ * @property {States} active
+ * @property {number} tabId
+ * @property {string} url
+ * @property {string} host
+ * @property {number|undefined} episodeId
  */
 class PageWrapper {
 
@@ -103,32 +46,12 @@ class PageWrapper {
      * @param {string} host
      * @param {string} url
      * @param {number} tabId
-     * @param {number} wrapperId
      */
-    constructor(host, url, tabId, wrapperId) {
+    constructor(host, url, tabId) {
         this.host = host;
         this.url = url;
         this.tabId = tabId;
-        this.wrapperId = wrapperId;
-
         this.active = states.INACTIVE;
-        this.analyzed = false;
-        this._scripts = {};
-    }
-
-    /**
-     * Starts a Analysis on this Page if it is not analyzed yet.
-     *
-     * @return {void}
-     */
-    startAnalyzer() {
-        if (this.analyzed) {
-            return
-        }
-
-        this.analyzed = true;
-        console.log("starting overWatch for " + this.host);
-        this.sendMessage({start: true}).catch(error => console.log(`error starting analyzer: ${error}`))
     }
 
     /**
@@ -137,19 +60,22 @@ class PageWrapper {
      * it is the first time the state 'Active' is reached.
      *
      *
-     * @param {string} newState
-     * @return {void}
+     * @param {States} newState
+     * @return {Promise<void>}
      */
-    changeState(newState) {
+    async changeState(newState) {
+        if (newState === "active") {
+            const episodeId = await UserSystem.getAssociatedEpisode(this.url);
+
+            if (episodeId) {
+                this.episodeId = episodeId;
+            }
+        }
         //Change the state of this extension for a given page, followed by a change of browser action icon
-        ExtensionManager.displayState(newState)
-            .catch(error => console.log("icon error " + error))
+        return ExtensionManager.displayState(newState)
+            .catch(error => console.error("icon error " + error))
             .then(() => this.active = newState)
             .then(() => UserSystem.saveHostState(this.host, this.active));
-
-        if (newState === states.ACTIVE && !this.analyzed) {
-            this.startAnalyzer();
-        }
     }
 
     /**
@@ -165,50 +91,17 @@ class PageWrapper {
             .then(state => {
                 //if there is an state, change to it, else change to INACTIVE
                 if (state) {
-                    this.changeState(state);
+                    return this.changeState(state);
                 } else {
-                    this.changeState(states.INACTIVE);
+                    return this.changeState(states.INACTIVE);
                 }
             })
-            .catch(error => console.log("error setting value", error, this));
+            .catch(error => console.error("error setting value", error, this));
     };
-
-    /**
-     * Sends a message to all content scripts in the page of this wrapper.
-     *
-     * @param {Object} message
-     * @param {number} attempts
-     * @return {Promise<any>}
-     */
-    sendMessage(message, attempts = 0) {
-        //should throw an error only if no content script is available yet,
-        //it should be ensured that no code that is executed from message handler
-        //throws an error, e.g. all error are caught before it propagates to here
-        return browser.tabs.sendMessage(this.tabId, message).catch(error => {
-            if (attempts >= 5) {
-                console.log(`could not reach any content script ${attempts} with ${error}`);
-                return;
-            }
-            //if no content script was reachable, wait for one second and try again
-            return new Promise(resolve => setTimeout(() => resolve(), 1000))
-            //DON'T FORGET TO INCREMENT ATTEMPTS!
-                .then(() => this.sendMessage(message, ++attempts));
-        });
-    }
-
-    executeScript(fileName) {
-        //execute scripts only once per wrapper/page
-        if (this._scripts[fileName]) {
-            return;
-        }
-        this._scripts[fileName] = 1;
-        browser.tabs.executeScript(this.tabId, {file: fileName}).catch(console.log);
-    }
 }
 
 const ExtensionManager = {
     tabs: new Map(),
-    devPorts: new Set(),
 
     /**
      * Gets the Wrapper for this tabId.
@@ -238,7 +131,7 @@ const ExtensionManager = {
      * Change the browserAction icon depending on the state parameter
      * or do nothing if the state is invalid.
      *
-     * @param {string} state
+     * @param {States} state
      * @return {Promise<void>}
      */
     displayState(state = this.currentActive) {
@@ -264,7 +157,6 @@ const ExtensionManager = {
         });
     },
 
-
     /**
      * Removes the wrapper for this tabId from the tabs if the id match.
      *
@@ -277,7 +169,7 @@ const ExtensionManager = {
     /**
      * Shortcut to set the activation state of the current selected wrapper.
      *
-     * @param {string} state
+     * @param {States} state
      */
     set currentActive(state) {
         this.selected && this.selected.changeState(state);
@@ -286,7 +178,7 @@ const ExtensionManager = {
     /**
      * Shortcut to get the activation state of the current selected wrapper.
      *
-     * @return {string}
+     * @return {States|undefined}
      */
     get currentActive() {
         return this.selected && this.selected.active || states.INACTIVE;
@@ -300,7 +192,7 @@ const ExtensionManager = {
      */
     processPopupMsg(msg) {
         if (msg.loggedIn) {
-            return Promise.resolve(user.loggedIn);
+            return Promise.resolve(UserSystem.userName);
         }
 
         if (msg.state) {
@@ -308,7 +200,7 @@ const ExtensionManager = {
             let responseState = false;
 
             //only check if user is logged in, else return for everything false
-            if (user.loggedIn && states.any(msg.state) && this.selected) {
+            if (UserSystem.userName && states.any(msg.state) && this.selected) {
                 //if there is a selected wrapper, accept with true
                 this.currentActive = msg.state;
                 responseState = true;
@@ -317,7 +209,7 @@ const ExtensionManager = {
             return Promise.resolve(responseState);
         }
         if (msg.unknown) {
-            return Promise.resolve({name: user.name, state: this.currentActive});
+            return Promise.resolve({name: UserSystem.userName, state: this.currentActive});
         }
         if (msg.login) {
             return UserSystem.logIn(msg.login.name, msg.login.psw);
@@ -328,77 +220,16 @@ const ExtensionManager = {
         }
 
         if (msg.user) {
-            return Promise.resolve({name: user.name});
+            return Promise.resolve({name: UserSystem.userName});
         }
 
         if (msg.logout) {
-            UserSystem.logOut();
+            UserSystem.logOut().catch(reason => console.error(reason));
         }
-    },
-
-    /**
-     *
-     * @param {browser.tabs.Tab} senderTab
-     * @param {Object} msg
-     */
-    processDevMsg(senderTab, msg) {
-        let currentPort;
-
-        for (let port of this.devPorts) {
-            if (port.id === senderTab.id) {
-                currentPort = port;
-                break;
-            }
-        }
-
-        let wrapper = this.getWrapper(senderTab.id);
-
-        if (!wrapper) {
-            throw Error(`there cannot be a message from non-existing wrapper with id ${senderTab.id}, ${msg}`);
-        }
-
-        if (!wrapper.devCache) {
-            wrapper.devCache = [];
-        }
-
-        let dev = msg.dev;
-
-        if (currentPort) {
-
-            if (dev.analyzer) {
-                currentPort.postMessage(dev);
-                console.log("analyzer");
-                wrapper.devCache.forEach(value => currentPort.postMessage(value));
-            } else {
-                currentPort.postMessage(dev);
-            }
-        }
-        if (dev.tree) {
-            wrapper.devCache.push(dev);
-        }
-    },
-
-
-    /**
-     *
-     * @param {Object} result
-     * @param {browser.tabs.Tab} senderTab
-     */
-    processOverWatch(result, senderTab) {
-        ifLoggedIn(() => {
-            let wrapper = this.getWrapper(senderTab.id);
-
-            if (!wrapper) {
-                throw Error(`no wrapper found for '${senderTab.id}'`)
-            }
-
-            result.contentSession = wrapper.wrapperId;
-            UserSystem.pushMessage(result);
-        }).catch(console.log);
     },
 
     tabsUpdated(tabId, changeInfo) {
-        let host = ExtensionManager.getHost(changeInfo.url);
+        const host = ExtensionManager.getHost(changeInfo.url);
 
         if (!changeInfo.favIconUrl) {
             console.log(tabId, changeInfo);
@@ -418,7 +249,7 @@ const ExtensionManager = {
         ifLoggedIn(() => {
             let wrapper = this.createWrapper(host, changeInfo.url, tabId);
             //init the wrapper
-            wrapper.init().catch(error => console.log(`initiating wrapper failed: ${error}`));
+            wrapper.init().catch(error => console.error(`initiating wrapper failed: ${error}`));
 
             //if active page is reloaded, set new wrapper as selected
             let previousWrapper = this.getWrapper(tabId);
@@ -430,7 +261,7 @@ const ExtensionManager = {
             //save wrapper with tabId
             this.tabs.set(tabId, wrapper);
         })  //print any errors that could have happened to console
-            .catch(console.log);
+            .catch(console.error);
     },
 
     tabActivated(activeInfo) {
@@ -444,13 +275,13 @@ const ExtensionManager = {
                     //check if that wrapper has the same url as the tab has now, else create a new wrapper
                     if (wrapper && tab.url === wrapper.url) {
                         this.selected = wrapper;
-                        this.displayState().catch(console.log);
+                        this.displayState().catch(console.error);
                     } else {
                         let host = this.getHost(tab);
                         //if there is no valid host, reset selected and return
                         if (!host) {
                             this.selected = undefined;
-                            this.displayState().catch(console.log);
+                            this.displayState().catch(console.error);
                             return
                         }
                         //create a new page wrapper
@@ -460,8 +291,8 @@ const ExtensionManager = {
                         return this.selected.init();
                     }
                 })
-                .catch(error => console.log(`error while setting selected page wrapper ${error}`));
-        }).catch(console.log)
+                .catch(error => console.error(`error while setting selected page wrapper ${error}`));
+        }).catch(console.error)
 
     },
 
@@ -477,46 +308,23 @@ const ExtensionManager = {
             try {
                 return this.processPopupMsg(msg.popup);
             } catch (e) {
-                console.log(e);
+                console.error(e);
             }
         }
-
-        //result and progress messages coming from overWatch.js
-        if (msg.overWatch && sender && sender.tab) {
-            try {
-                this.processOverWatch(msg.overWatch, sender.tab);
-            } catch (e) {
-                console.log(e);
-            }
-        }
-
-        //message from contentScript (analyzer) to devTool
-        if (msg.dev && sender && sender.tab) {
-            try {
-                this.processDevMsg(sender.tab, msg);
-            } catch (e) {
-                console.log(e);
-            }
-        }
-
     },
 
-    handlePortConnect(port) {
-        if (port.name === "dev") {
-            this.devPorts.add(port);
-
-            port.onMessage.addListener(msg => {
-                if (msg.id && msg.msg) {
-                    if (!port.id) {
-                        //ready 'flasher' for mouseOver events
-                        this.getWrapper(msg.id).executeScript("animator/flasher.js");
-                    }
-                    port.id = msg.id;
-                    this.getWrapper(msg.id).sendMessage(msg.msg).catch(error => console.log("message error", error));
-                }
-            });
-
-            port.onDisconnect.addListener(() => this.devPorts.delete(port));
+    /**
+     *
+     * @param {string} command
+     * @return {void}
+     */
+    commandHandler(command) {
+        if (command === "toggle-activation") {
+            this.currentActive = this.currentActive === "active" ? "inactive" : "active";
+        } else if (command === "mark-finished") {
+            if (this.selected && this.selected.active && this.selected.episodeId) {
+                UserSystem.sendMarked(this.selected.episodeId).catch(console.error);
+            }
         }
     },
 
@@ -540,8 +348,9 @@ const ExtensionManager = {
         //reacts to messages from content scripts of pages or the browserAction
         browser.runtime.onMessage.addListener((msg, sender) => this.messageHandler(msg, sender));
 
-        //handle connect request, at the moment only from devTool
-        browser.runtime.onConnect.addListener(port => this.handlePortConnect(port));
+        // reacts to extension defined shortcuts
+        browser.commands.onCommand.addListener((command) => this.commandHandler(command));
+
     },
 
     /**
@@ -577,93 +386,34 @@ const ExtensionManager = {
      * @return {PageWrapper}
      */
     createWrapper(host, url, tabId) {
-        return new PageWrapper(host, url, tabId, nextWrapperId());
+        return new PageWrapper(host, url, tabId);
     }
 };
 
-/**
- * Returns the next ID number.
- * Starts at zero.
- *
- * @type function
- */
-const nextWrapperId = (function () {
-    let current = 0;
-    return () => current++;
-});
-
-//ask initially for login status
-UserSystem
-    .loggedIn()
-    .then(loggedIn => {
-        if (!loggedIn) {
-            return StoreManager.deleteUser();
-        }
-    })
-    .catch(error => {
-        if (!UserSystem.offline) {
-            return Promise.reject(error);
-        }
-
-        return StoreManager
-            .readUser()
-            .then(offlineUser => {
-                if (!offlineUser) {
-                    return;
-                }
-                if (offlineUser.session && offlineUser.name && offlineUser.uuid) {
-                    user.setId(offlineUser.uuid);
-                    user.setName(offlineUser.name);
-                    user.setSession(offlineUser.session);
-                }
-            })
-            .then(() => Promise.reject(error));
-    })
-    .finally(() => {
-        //listen to session changes, to write or
-        //delete the offlineUser and clean or start up
-        user.addListener("session", async (oldValue, newValue) => {
-            if (newValue) {
-                let cache = await StoreManager.readMessageCache();
-                let offlineUser = await StoreManager.readUser();
-
-                if (offlineUser.uuid === user.uuid && Array.isArray(cache)) {
-                    UserSystem.messageCache.push(...cache);
-                }
-                //setup webSocket client to server
-                await StoreManager.writeUser(user);
-                UserSystem.activatePush();
-            } else {
-                StoreManager
-                    .deleteUser()
-                    .finally(() => UserSystem.finish());
-            }
-        });
-    });
 //initiate all listener that are relevant for the extensionManager
 ExtensionManager.initListener();
+
+UserSystem.onLoggedStateChange(name => {
+    if (name) {
+        checkBookmarkTree();
+    }
+});
 
 /**
  * Executes callbacks depending on whether a user is logged in or not.
  *
  *
  * @param {function} cbTrue
- * @param cbFalse
+ * @param {function?}cbFalse
  * @return {Promise<any | never>}
  */
 function ifLoggedIn(cbTrue, cbFalse) {
     return new Promise(resolve => {
-        if (user.loggedIn) {
+        if (UserSystem.userName) {
             resolve(cbTrue());
         }
         if (typeof cbFalse === "function") {
             resolve(cbFalse());
         }
     });
-}
-
-function validateString(value) {
-    if (!(value && (typeof value === 'string' || value instanceof String))) {
-        throw Error(`'${value}' is no valid string input`);
-    }
 }

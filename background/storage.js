@@ -1,38 +1,10 @@
 const StoreManager = {
     active_user: "active_user",
-    messageCache: "messageCache",
 
     /**
      * Shortcut function for reading user.
      *
-     * @return {Promise<any>}
-     */
-    readMessageCache() {
-        return this.read(this.messageCache);
-    },
-
-    /**
-     * Shortcut function for saving user.
-     *
-     * @return {Promise<void>}
-     */
-    writeMessageCache(user) {
-        return this.write(this.messageCache, user);
-    },
-
-    /**
-     * Shortcut function for saving user.
-     *
-     * @return {Promise<void>}
-     */
-    deleteMessageCache() {
-        return this.delete(this.messageCache);
-    },
-
-    /**
-     * Shortcut function for reading user.
-     *
-     * @return {Promise<any>}
+     * @return {Promise<User>}
      */
     readUser() {
         return this.read(this.active_user);
@@ -41,6 +13,7 @@ const StoreManager = {
     /**
      * Shortcut function for saving user.
      *
+     * @param {User} user
      * @return {Promise<void>}
      */
     writeUser(user) {
@@ -82,7 +55,7 @@ const StoreManager = {
      */
     write(key, value) {
         if (!key) {
-            console.log("writing with undefined key!");
+            console.warn("writing with undefined key!");
         }
         let item = {};
         item[key] = value;
@@ -120,7 +93,7 @@ const StoreManager = {
      */
     delete(keys) {
         if (!keys) {
-            console.log("deleting with undefined key!");
+            console.warn("deleting with undefined key!");
         }
 
         return browser.storage.local.remove(keys);

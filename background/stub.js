@@ -4,16 +4,14 @@ const StubClient = {};
 const Stub = {
     activate() {
         UserSystem.loggedIn = this.loggedIn;
-        UserSystem.activatePush = () => {
-        };
         UserSystem.getUuid = this.getUid
     },
 
     /**
-     * @return {Promise<boolean>}
+     * @return {Promise<string>}
      */
     loggedIn() {
-        return Promise.resolve(true);
+        return Promise.resolve("testUserName");
     },
 
     /**
