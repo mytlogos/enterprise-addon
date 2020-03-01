@@ -323,7 +323,37 @@ const ExtensionManager = {
             this.currentActive = this.currentActive === "active" ? "inactive" : "active";
         } else if (command === "mark-finished") {
             if (this.selected && this.selected.active && this.selected.episodeId) {
-                UserSystem.sendMarked(this.selected.episodeId).catch(console.error);
+                UserSystem.sendMarked(this.selected.episodeId).then(value => {
+                    browser.notifications.create({
+                        type: "basic",
+                        title: "Mark as read succeeded",
+                        message: "Action was executed successfully",
+                        iconUrl: browser.extension.getURL("img/ext_icon_active32.png"),
+                    }).catch(console.error);
+                }).catch(reason => {
+                    console.error(reason);
+                    browser.notifications.create({
+                        type: "basic",
+                        title: "Mark as read failed",
+                        message: "An Error occurred while action was executed",
+                        iconUrl: browser.extension.getURL("img/ext_icon_active32.png"),
+                    }).catch(console.error);
+                });
+            } else {
+                let message;
+                if (!this.selected) {
+                    message = "Current Tab is not selected?";
+                } else if (!this.selected.active) {
+                    message = "Current Tab is not active";
+                } else {
+                    message = "Current Tab has no associated Episode";
+                }
+                browser.notifications.create({
+                    type: "basic",
+                    title: "Mark as read failed",
+                    message,
+                    iconUrl: browser.extension.getURL("img/ext_icon_active32.png"),
+                }).catch(console.error);
             }
         }
     },
@@ -351,6 +381,9 @@ const ExtensionManager = {
         // reacts to extension defined shortcuts
         browser.commands.onCommand.addListener((command) => this.commandHandler(command));
 
+        browser.notifications.onShown.addListener((id) => {
+            setTimeout(() => browser.notifications.clear(id), 4000);
+        });
     },
 
     /**
