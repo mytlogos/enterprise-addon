@@ -45,12 +45,10 @@ async function checkBookmark(bookmarkTreeNode, toAddBookMarks = [], bookMarkInfo
     }
 
     if (!level && UserSystem.userName) {
-        const urls = [...new Set(toAddBookMarks.map(value => value.url))];
-
         if (bookMarkInfo.unused == null) {
             bookMarkInfo.unused = [];
         }
-        urls.push(...bookMarkInfo.unused);
+        const urls = [...new Set([...toAddBookMarks.map(value => value.url), ...bookMarkInfo.unused])];
         try {
             if (urls.length) {
                 if (bookmarkRequestActive) {
